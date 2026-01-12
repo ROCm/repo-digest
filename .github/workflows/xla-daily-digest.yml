@@ -1,0 +1,36 @@
+name: Daily XLA Digest
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Runs daily at 8:00 AM UTC
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout XLA Repository
+        uses: actions/checkout@v6
+        with:
+          repository: openxla/xla
+          path: xla
+          ref: main
+          fetch-depth: 0
+
+      - name: Generate Digest
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "run xla-daily-digest"
+          claude_args: "--allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite"
+
+      - name: Upload Claude logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest
+          path: "digest-*.md"
