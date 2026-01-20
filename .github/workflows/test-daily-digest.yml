@@ -1,0 +1,84 @@
+name: Test Daily Digest
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_commit:
+        description: 'XLA commit to use as HEAD'
+        required: false
+        default: '6f0578a6c82821b0f8c7a4a0b90921a92d0aaf34'
+      num_commits:
+        description: 'Number of commits to backdate'
+        required: false
+        default: '20'
+
+jobs:
+  test-digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout XLA Repository
+        uses: actions/checkout@v4
+        with:
+          repository: openxla/xla
+          path: xla
+          ref: main
+          fetch-depth: 0
+
+      - name: Reset to specific commit and backdate
+        run: |
+          cd xla
+
+          # Reset main to the specific test commit
+          git reset --hard ${{ inputs.test_commit }}
+          echo "Reset to commit: ${{ inputs.test_commit }}"
+
+          # Get current timestamp
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%S %z")
+          echo "Setting commit dates to: $NOW"
+
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+
+          # Use git rebase with exec to rewrite dates for last N commits
+          COMMITS=${{ inputs.num_commits }}
+
+          GIT_COMMITTER_DATE="$NOW" git rebase --exec "GIT_COMMITTER_DATE='$NOW' git commit --amend --no-edit --date='$NOW'" HEAD~${COMMITS}
+
+          # Update origin/main ref locally to point to rewritten commits (no push)
+          # git update-ref refs/remotes/origin/main HEAD
+
+          # Verify the dates were changed
+          echo "=== Commits after backdating ==="
+          git log --oneline -n ${{ inputs.num_commits }} --format="%h %ad %s" --date=iso
+
+      - name: Generate Digest
+        id: claude-code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ".claude/projects/xla.md"
+          claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
+
+      - name: Upload Digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-digest
+          path: "digests/digest-*.md"
+
+      - name: Upload Claude Execution Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log
+          path: ${{ steps.claude-code.outputs.execution_file }}
+
+      - name: Show Digest Content
+        if: always()
+        run: |
+          echo "=== Generated Digest ==="
+          cat digests/digest-*.md 2>/dev/null || echo "No digest file found"
