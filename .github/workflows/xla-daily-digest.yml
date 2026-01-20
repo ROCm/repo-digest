@@ -23,14 +23,22 @@ jobs:
           fetch-depth: 0
 
       - name: Generate Digest
+        id: claude-code
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: "run xla-daily-digest"
-          claude_args: "--allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite"
+          prompt: ".claude/projects/xla.md"
+          claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
 
-      - name: Upload Claude logs
+      - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
           name: digest
-          path: "digest-*.md"
+          path: "digests/digest-*.md"
+
+      - name: Upload Claude Execution Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log
+          path: ${{ steps.claude-code.outputs.execution_file }}
