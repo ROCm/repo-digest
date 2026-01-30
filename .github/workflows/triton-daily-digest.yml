@@ -1,0 +1,44 @@
+name: Daily TRITON Digest
+
+on:
+  schedule:
+    - cron: '0 8 * * *'  # Runs daily at 8:00 AM UTC
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout TRITON Repository
+        uses: actions/checkout@v6
+        with:
+          repository: triton-lang/triton
+          path: triton
+          ref: main
+          fetch-depth: 0
+
+      - name: Generate Digest
+        id: claude-code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ".claude/projects/triton.md"
+          claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
+
+      - name: Upload Digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest
+          path: "digests/digest-*.md"
+
+      - name: Upload Claude Execution Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log
+          path: ${{ steps.claude-code.outputs.execution_file }}
