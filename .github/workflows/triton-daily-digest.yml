@@ -22,11 +22,26 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Test Gateway Connection
+        env:
+          LLM_GATEWAY_KEY: ${{ secrets.LLM_GATEWAY_KEY }}
+        run: |
+          pip install anthropic
+          python scripts/test_gateway.py
+
       - name: Generate Digest
         id: claude-code
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}"
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.LLM_GATEWAY_KEY }}
           prompt: ".claude/projects/triton.md"
           claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
 
