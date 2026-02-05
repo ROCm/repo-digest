@@ -7,7 +7,7 @@ on:
 
 jobs:
   digest:
-    runs-on: ubuntu-latest
+    runs-on: build-only
     permissions:
       contents: read
       id-token: write
