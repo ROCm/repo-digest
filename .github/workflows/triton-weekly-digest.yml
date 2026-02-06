@@ -1,19 +1,12 @@
-name: Test Daily Digest
+name: Weekly TRITON Digest
 
 on:
-  workflow_dispatch:
-    inputs:
-      test_commit:
-        description: 'XLA commit to use as HEAD'
-        required: false
-        default: '6f0578a6c82821b0f8c7a4a0b90921a92d0aaf34'
-      num_commits:
-        description: 'Number of commits to backdate'
-        required: false
-        default: '20'
+  schedule:
+    - cron: '0 20 * * 0'  # Runs every Sunday at 8:00 PM UTC
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  test-digest:
+  digest:
     runs-on: build-only
     permissions:
       contents: read
@@ -21,40 +14,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout XLA Repository
-        uses: actions/checkout@v4
+      - name: Checkout TRITON Repository
+        uses: actions/checkout@v6
         with:
-          repository: openxla/xla
-          path: xla
+          repository: triton-lang/triton
+          path: triton
           ref: main
           fetch-depth: 0
-
-      - name: Reset to specific commit and backdate
-        run: |
-          cd xla
-
-          # Reset main to the specific test commit
-          git reset --hard ${{ inputs.test_commit }}
-          echo "Reset to commit: ${{ inputs.test_commit }}"
-
-          # Get current timestamp
-          NOW=$(date -u +"%Y-%m-%dT%H:%M:%S %z")
-          echo "Setting commit dates to: $NOW"
-
-          git config user.email "test@example.com"
-          git config user.name "Test User"
-
-          # Use git rebase with exec to rewrite dates for last N commits
-          COMMITS=${{ inputs.num_commits }}
-
-          GIT_COMMITTER_DATE="$NOW" git rebase --exec "GIT_COMMITTER_DATE='$NOW' git commit --amend --no-edit --date='$NOW'" HEAD~${COMMITS}
-
-          # Update origin/main ref locally to point to rewritten commits (no push)
-          # git update-ref refs/remotes/origin/main HEAD
-
-          # Verify the dates were changed
-          echo "=== Commits after backdating ==="
-          git log --oneline -n ${{ inputs.num_commits }} --format="%h %ad %s" --date=iso
 
       # =============================================================================
       # WORKAROUND: Pre-install and warmup Claude Code
@@ -81,7 +47,6 @@ jobs:
         run: |
           # Install Claude Code
           curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.31
-
           export PATH="$HOME/.local/bin:$PATH"
 
           # Verify installation
@@ -93,7 +58,7 @@ jobs:
 
       - name: Generate Digest
         id: claude-code
-        timeout-minutes: 10
+        timeout-minutes: 60
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -105,8 +70,10 @@ jobs:
         with:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
           show_full_output: true
-          prompt: ".claude/projects/xla.md"
-          claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
+          prompt: |
+            .claude/projects/triton.md
+            7
+          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
           settings: |
             {
               "hasCompletedOnboarding": true
@@ -115,7 +82,7 @@ jobs:
       - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
-          name: test-digest
+          name: weekly-digest
           path: "digests/digest-*.md"
 
       - name: Upload Claude Execution Log
@@ -124,9 +91,3 @@ jobs:
         with:
           name: claude-execution-log
           path: ${{ steps.claude-code.outputs.execution_file }}
-
-      - name: Show Digest Content
-        if: always()
-        run: |
-          echo "=== Generated Digest ==="
-          cat digests/digest-*.md 2>/dev/null || echo "No digest file found"

@@ -54,7 +54,7 @@ Use phrases like:
 ## Digest Template
 
 ```markdown
-# XLA Daily Digest - YYYY-MM-DD
+# XLA {FREQUENCY} Digest - YYYY-MM-DD
 
 ## Summary
 [1-2 sentences capturing the most important developments]

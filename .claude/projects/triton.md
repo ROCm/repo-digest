@@ -67,7 +67,7 @@ Use phrases like:
 ## Digest Template
 
 ```markdown
-# TRITON Daily Digest - YYYY-MM-DD
+# TRITON {FREQUENCY} Digest - YYYY-MM-DD
 
 ## Summary
 [1-2 sentences capturing the most important developments]

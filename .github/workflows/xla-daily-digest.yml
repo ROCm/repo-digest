@@ -59,7 +59,7 @@ jobs:
 
       - name: Generate Digest
         id: claude-code
-        timeout-minutes: 10
+        timeout-minutes: 30
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -71,8 +71,10 @@ jobs:
         with:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
           show_full_output: true
-          prompt: ".claude/projects/xla.md"
-          claude_args: "--agent daily-digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
+          prompt: |
+            .claude/projects/xla.md
+            1
+          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
           settings: |
             {
               "hasCompletedOnboarding": true

@@ -13,7 +13,7 @@ Automated summaries of changes to any open source repository using Claude Code. 
 
 A GitHub Action runs on your configured schedule using a multi-agent architecture:
 
-1. **digest-orchestrator** — Fetches commits for the specified time range and coordinates analysis
+1. **digest** — Fetches commits for the specified time range and coordinates analysis
 2. **analyze-commit** — Sub-agents that analyze individual commits in parallel
 
 The system generates prioritized digests highlighting changes relevant to your defined focus areas.
@@ -23,7 +23,7 @@ The system generates prioritized digests highlighting changes relevant to your d
 ```
 .claude/
 ├── agents/
-│   ├── daily-digest.md      # Orchestrator agent
+│   ├── digest.md            # Orchestrator agent
 │   └── analyze-commit.md    # Commit analyzer sub-agent
 └── projects/
     └── <project>.md         # Project-specific configuration
@@ -34,7 +34,6 @@ digests/                     # Generated digest files
 
 Project settings are defined in `.claude/projects/<project>.md`:
 - **Repository** — GitHub repository path (e.g., `owner/repo`)
-- **Frequency** — Digest frequency (weekly, monthly, daily)
 - **Focus areas** — Paths and components to prioritize
 - **Keywords** — Terms to highlight in analysis
 - **Priority rules** — How to categorize and rank changes
@@ -43,8 +42,10 @@ Project settings are defined in `.claude/projects/<project>.md`:
 ## Adding New Projects
 
 1. Create a config file in `.claude/projects/<project>.md`
-2. Define repository path, focus areas, frequency, and template
-3. Create a workflow that invokes the digest agent with the config path
+2. Define repository path, focus areas, and template
+3. Create a workflow that invokes the digest agent with:
+   - Config path (first line)
+   - Number of days (second line) - e.g., 1 for daily, 7 for weekly
 4. Configure the cron schedule for your desired frequency
 
 ## Examples
@@ -58,9 +59,9 @@ See the [`xla_digest_examples/`](./xla_digest_examples/) directory for sample di
 
 ## Manual Trigger
 
-Go to Actions > Project Digest > Run workflow
-
-Select the project configuration and time range when triggering manually.
+Workflows can be triggered manually via Actions tab:
+- Daily digests: Run the corresponding daily workflow
+- Weekly digests: Run the corresponding weekly workflow
 
 ## License
 

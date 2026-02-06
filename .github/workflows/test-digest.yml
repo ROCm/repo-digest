@@ -1,26 +1,77 @@
-name: Daily TRITON Digest
+name: Test Digest
 
 on:
-  schedule:
-    - cron: '0 8 * * *'  # Runs daily at 8:00 AM UTC
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
-  digest:
+  test-digest:
     runs-on: build-only
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: xla
+            repo: openxla/xla
+            config: .claude/projects/xla.md
+            days: 1
+            num_commits: 20
+            test_commit: 6f0578a6c82821b0f8c7a4a0b90921a92d0aaf34
+            name: XLA Daily
+          - project: triton
+            repo: triton-lang/triton
+            config: .claude/projects/triton.md
+            days: 1
+            num_commits: 5
+            test_commit: 750952252ba7cbbe6cb64af13e00d356f7026a8c
+            name: Triton Daily
+          - project: triton
+            repo: triton-lang/triton
+            config: .claude/projects/triton.md
+            days: 7
+            num_commits: 30
+            test_commit: 750952252ba7cbbe6cb64af13e00d356f7026a8c
+            name: Triton Weekly
+    name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout TRITON Repository
+      - name: Checkout ${{ matrix.project }} Repository
         uses: actions/checkout@v6
         with:
-          repository: triton-lang/triton
-          path: triton
+          repository: ${{ matrix.repo }}
+          path: ${{ matrix.project }}
           ref: main
           fetch-depth: 0
+
+      - name: Reset to specific commit and backdate
+        run: |
+          cd ${{ matrix.project }}
+
+          # Reset main to the specific test commit
+          git reset --hard ${{ matrix.test_commit }}
+          echo "Reset to commit: ${{ matrix.test_commit }}"
+
+          # Get current timestamp
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%S %z")
+          echo "Setting commit dates to: $NOW"
+
+          git config user.email "test@example.com"
+          git config user.name "Test User"
+
+          # Use git rebase with exec to rewrite dates for last N commits
+          COMMITS=${{ matrix.num_commits }}
+
+          GIT_COMMITTER_DATE="$NOW" git rebase --exec "GIT_COMMITTER_DATE='$NOW' git commit --amend --no-edit --date='$NOW'" HEAD~${COMMITS}
+
+          # Update origin/main ref locally to point to rewritten commits (no push)
+          # git update-ref refs/remotes/origin/main HEAD
+
+          # Verify the dates were changed
+          echo "=== Commits after backdating ==="
+          git log --oneline -n ${{ matrix.num_commits }} --format="%h %ad %s" --date=iso
 
       # =============================================================================
       # WORKAROUND: Pre-install and warmup Claude Code
@@ -47,6 +98,7 @@ jobs:
         run: |
           # Install Claude Code
           curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.31
+
           export PATH="$HOME/.local/bin:$PATH"
 
           # Verify installation
@@ -58,7 +110,7 @@ jobs:
 
       - name: Generate Digest
         id: claude-code
-        timeout-minutes: 30
+        timeout-minutes: 60
         uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
@@ -71,8 +123,8 @@ jobs:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
           show_full_output: true
           prompt: |
-            .claude/projects/triton.md
-            1
+            ${{ matrix.config }}
+            ${{ matrix.days }}
           claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
           settings: |
             {
@@ -82,12 +134,18 @@ jobs:
       - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest
-          path: "digests/digest-*.md"
+          name: test-digest-${{ matrix.project }}-${{ matrix.days }}day
+          path: "digests/*digest-*.md"
 
       - name: Upload Claude Execution Log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: claude-execution-log
+          name: claude-execution-log-${{ matrix.project }}-${{ matrix.days }}day
           path: ${{ steps.claude-code.outputs.execution_file }}
+
+      - name: Show Digest Content
+        if: always()
+        run: |
+          echo "=== Generated Digest ==="
+          cat digests/*digest-*.md 2>/dev/null || echo "No digest file found"
