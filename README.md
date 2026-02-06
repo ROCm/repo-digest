@@ -47,27 +47,6 @@ Project settings are defined in `.claude/projects/<project>.md`:
 3. Create a workflow that invokes the digest agent with the config path
 4. Configure the cron schedule for your desired frequency
 
-### Example Frequencies
-
-```yaml
-# Weekly digest (every Monday at 9am UTC)
-schedule:
-  - cron: '0 9 * * 1'
-
-# Monthly digest (first day of month at 9am UTC)
-schedule:
-  - cron: '0 9 1 * *'
-```
-
-## Setup
-
-1. Fork this repository
-2. Get your OAuth token by running `claude /oauth_token` (requires Claude Max subscription)
-3. Add `CLAUDE_CODE_OAUTH_TOKEN` to your repository secrets
-4. Configure your project in `.claude/projects/`
-5. Set up the workflow schedule for your desired frequency
-6. The workflow runs automatically, or trigger manually via Actions tab
-
 ## Examples
 
 See the [`xla_digest_examples/`](./xla_digest_examples/) directory for sample digest outputs from the [OpenXLA/XLA](https://github.com/openxla/xla) repository. These examples demonstrate:
