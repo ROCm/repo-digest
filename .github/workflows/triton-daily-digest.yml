@@ -7,7 +7,7 @@ on:
 
 jobs:
   digest:
-    runs-on: build-only
+    runs-on: build-only-repo-digest
     permissions:
       contents: read
       id-token: write
