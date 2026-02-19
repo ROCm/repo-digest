@@ -1,0 +1,110 @@
+name: Claude Auto Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: build-only-repo-digest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install GitHub CLI
+        run: |
+          # Check if gh is already installed
+          if ! command -v gh &> /dev/null; then
+            echo "Installing GitHub CLI..."
+            type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
+          else
+            echo "GitHub CLI already installed"
+          fi
+          gh --version
+
+      # =============================================================================
+      # WORKAROUND: Pre-install and warmup Claude Code
+      # =============================================================================
+      # Without this step, claude-code-action hangs indefinitely after printing
+      # "Running Claude with prompt from file: ..." with no LLM requests being made.
+      #
+      # This warmup step:
+      # - Pre-installs Claude Code before the action runs
+      # - Runs a simple command to complete first-run initialization
+      #
+      # TODO: This workaround may be addressing temporary issues in claude-code-action,
+      # Claude Code CLI, or server-side. The same hang was observed even with standard
+      # console_auth setup (without LLM gateway). Re-test periodically to check if
+      # this workaround is still needed.
+      # =============================================================================
+      - name: Install and Warmup Claude Code
+        timeout-minutes: 2
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}"
+          ANTHROPIC_API_KEY: "sk-ant-dummy-gateway-key"
+          ANTHROPIC_MODEL: "Claude-Sonnet-4.5"
+        run: |
+          # Install Claude Code
+          curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.31
+
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Verify installation
+          claude --version
+
+          # Warmup: Run a simple command to initialize Claude Code state
+          # This creates necessary config files and does first-run setup
+          timeout 60 claude --print -p "Say OK" || echo "Warmup complete (exit ok)"
+
+      - name: Review Pull Request
+        id: claude-code
+        timeout-minutes: 15
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}"
+          ANTHROPIC_MODEL: "Claude-Sonnet-4.5"
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.5"
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "Claude-Sonnet-4.5"
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: "sk-ant-dummy-gateway-key"
+          show_full_output: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Please review this pull request with a focus on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Security implications
+            - Performance considerations
+
+            Note: The PR branch is already checked out in the current working directory.
+
+            Use `gh pr comment` for top-level feedback.
+            Use `mcp__github_inline_comment__create_inline_comment` to highlight specific code issues.
+            Only post GitHub comments - don't submit review text as messages.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+          settings: |
+            {
+              "hasCompletedOnboarding": true
+            }
+
+      - name: Upload Claude Execution Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-log
+          path: ${{ steps.claude-code.outputs.execution_file }}
