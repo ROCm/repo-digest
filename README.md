@@ -25,8 +25,13 @@ The system generates prioritized digests highlighting changes relevant to your d
 ├── agents/
 │   ├── digest.md            # Orchestrator agent
 │   └── analyze-commit.md    # Commit analyzer sub-agent
-└── projects/
-    └── <project>.md         # Project-specific configuration
+├── projects/
+│   └── <project>.md         # Project-specific configuration
+└── skills/
+    └── download-artifacts/  # Skill for downloading digest artifacts
+        └── SKILL.md
+scripts/
+└── download-artifacts.sh    # Download artifacts from GitHub Actions
 digests/                     # Generated digest files
 ```
 
@@ -56,6 +61,25 @@ See the [`xla_digest_examples/`](./xla_digest_examples/) directory for sample di
 - Commit categorization by focus areas (GPU, HLO, PJRT, SPMD)
 - Priority-based change highlighting
 - AI-generated summaries and insights
+
+## Downloading Artifacts
+
+Generated digests are uploaded as GitHub Actions artifacts. Use the included script to download them:
+
+```bash
+# Most recent Triton daily digest
+./scripts/download-artifacts.sh -a digest triton-daily-digest.yml
+
+# 3 most recent XLA daily digests
+./scripts/download-artifacts.sh -n 3 -a digest xla-daily-digest.yml
+
+# Triton weekly digest
+./scripts/download-artifacts.sh -a weekly-digest triton-weekly-digest.yml
+```
+
+Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.
+
+If using Claude Code, invoke `/download-artifacts` to download artifacts interactively.
 
 ## Manual Trigger
 
