@@ -6,6 +6,7 @@ on:
 jobs:
   test-digest:
     runs-on: build-only-repo-digest
+    container: ubuntu:24.04
     permissions:
       contents: read
       id-token: write
@@ -36,6 +37,9 @@ jobs:
             name: Triton Weekly
     name: ${{ matrix.name }}
     steps:
+      - name: Install prerequisites
+        run: apt-get update && apt-get install -y git curl unzip
+
       - uses: actions/checkout@v4
 
       - name: Checkout ${{ matrix.project }} Repository
