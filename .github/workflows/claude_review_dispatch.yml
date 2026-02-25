@@ -1,0 +1,19 @@
+name: Claude Review Dispatch
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Dispatch review event
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/dispatches \
+            -f event_type=claude-review \
+            -f 'client_payload[pull_number]=${{ github.event.pull_request.number }}'
