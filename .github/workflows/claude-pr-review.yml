@@ -14,7 +14,9 @@ jobs:
       id-token: write
     steps:
       - name: Install prerequisites
-        run: apt-get update && apt-get install -y git curl unzip gh
+        run: |
+          apt-get update && apt-get install -y git curl unzip gh
+          git config --global --add safe.directory '*'
 
       - uses: actions/checkout@v6
 
