@@ -145,7 +145,7 @@ Each sub-agent returns:
 ```
 PRIORITY: high|medium|low
 ENTRY:
-- Summary [hash](url)
+- Summary by John Doe <john.doe@example.com> [hash](url)
 
     Impact description.
 ```
