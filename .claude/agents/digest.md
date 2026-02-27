@@ -145,10 +145,12 @@ Each sub-agent returns:
 ```
 PRIORITY: high|medium|low
 ENTRY:
-- Summary by John Doe <john.doe@example.com> [hash](url)
+- Summary by John Doe (Google) [hash](url)
 
     Impact description.
 ```
+
+Note: Author format is `by Name (Organization)` if organization is available, or just `by Name` if not.
 
 Parse each response and group entries by priority:
 - `high` → `### 🔴 High Priority` section

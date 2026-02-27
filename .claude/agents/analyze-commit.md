@@ -42,9 +42,19 @@ git -C <path> show <commit-hash>
 This shows the full commit: message, stats, and diff content. Use this to understand what actually changed.
 
 ```bash
-git -C <path> show --format="%an <%ae>" -s <commit-hash>
+git -C <path> show --format="%an" -s <commit-hash>
 ```
-This gets the author name and email in the format "Name <email@example.com>".
+This gets the author name.
+
+```bash
+gh api repos/{owner}/{repo}/commits/<commit-hash>
+```
+This gets the commit details from GitHub API. Extract the author's GitHub username from the response (`.author.login`).
+
+```bash
+gh api users/<username>
+```
+Use the GitHub username to fetch the author's profile and extract their organization (`.company` field).
 
 ```bash
 git -C <path> diff-tree --no-commit-id --name-only -r <commit-hash>
@@ -76,7 +86,7 @@ Apply the priority rules from the config:
 
 Compose a digest entry with:
 - **Summary**: Brief description of what changed (under 100 characters)
-- **Author**: Include the author name and email from Step 2
+- **Author**: Include the author name and organization (if available from GitHub API) from Step 2
 - **Impact**: 1-2 sentences explaining why this matters and who it affects
 - If the emphasis topic applies, explicitly call it out (e.g., "**ROCm impact:** ...")
 - Bold any keywords that appear
@@ -88,15 +98,17 @@ Return EXACTLY this format with no other text:
 ```
 PRIORITY: high|medium|low
 ENTRY:
-- Brief summary of what changed by Author Name <email@example.com> [short-hash](repo-url/commit/full-hash)
+- Brief summary of what changed by Author Name (Organization) [short-hash](repo-url/commit/full-hash)
 
     Impact description explaining why this matters and who it affects.
 ```
 
+If organization is not available from GitHub API, show only the author name without parentheses.
+
 ### STRICT Format Rules
 
 1. The entry MUST start with `- ` (dash space)
-2. Summary comes first, then `by Author Name <email>`, then space, then `[short-hash](full-url)`
+2. Summary comes first, then `by Author Name (Organization)` if organization is available, or just `by Author Name` if not, then space, then `[short-hash](full-url)`
 3. Short hash = first 7 characters only
 4. After the link, there MUST be a blank line
 5. Impact is a SINGLE paragraph (not bullet points), indented with exactly 4 spaces
@@ -110,7 +122,7 @@ ENTRY:
 ```
 PRIORITY: high
 ENTRY:
-- Remove persistent collective cliques from GPU backend by John Doe <john.doe@example.com> [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
+- Remove persistent collective cliques from GPU backend by John Doe (Google) [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
 
     Simplifies GPU runtime by removing unsafe NCCL clique caching that could cause deadlocks. **ROCm impact:** ROCm developers should verify collective operations still work correctly after this change.
 ```
