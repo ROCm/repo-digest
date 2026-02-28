@@ -46,15 +46,21 @@ git -C <path> show --format="%an" -s <commit-hash>
 ```
 This gets the author name.
 
-```bash
-gh api repos/{owner}/{repo}/commits/<commit-hash>
-```
-This gets the commit details from GitHub API. Extract the author's GitHub username from the response (`.author.login`).
+**OPTIONAL - Organization Lookup (with rate limit protection):**
+
+Only attempt organization lookup if you haven't hit rate limits. Use timeouts to avoid blocking:
 
 ```bash
-gh api users/<username>
+timeout 3 gh api repos/{owner}/{repo}/commits/<commit-hash> 2>/dev/null || echo "{}"
 ```
-Use the GitHub username to fetch the author's profile and extract their organization (`.company` field).
+If successful, extract the author's GitHub username from `.author.login`.
+
+```bash
+timeout 3 gh api users/<username>/orgs 2>/dev/null || echo "[]"
+```
+If successful and response contains organizations, use the first one's `.login` field.
+
+**IMPORTANT**: If either API call times out, fails, or returns empty data, skip the organization and just use the author name. Do NOT retry or wait. Organization info is supplementary and optional.
 
 ```bash
 git -C <path> diff-tree --no-commit-id --name-only -r <commit-hash>
@@ -86,7 +92,7 @@ Apply the priority rules from the config:
 
 Compose a digest entry with:
 - **Summary**: Brief description of what changed (under 100 characters)
-- **Author**: Include the author name and organization (if available from GitHub API) from Step 2
+- **Author**: Always include the author name. Optionally add organization in parentheses if successfully retrieved from GitHub API (without hitting timeouts/rate limits)
 - **Impact**: 1-2 sentences explaining why this matters and who it affects
 - If the emphasis topic applies, explicitly call it out (e.g., "**ROCm impact:** ...")
 - Bold any keywords that appear
