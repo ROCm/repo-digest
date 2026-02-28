@@ -46,21 +46,59 @@ git -C <path> show --format="%an" -s <commit-hash>
 ```
 This gets the author name.
 
-**OPTIONAL - Organization Lookup (with rate limit protection):**
+**OPTIONAL - Organization Lookup with Caching:**
 
-Only attempt organization lookup if you haven't hit rate limits. Use timeouts to avoid blocking:
+Organization lookup uses a cache file at `/tmp/repo-digest-org-cache.json` to avoid redundant API calls.
+
+**Sub-step A: Check cache first**
+
+Read the cache file if it exists:
+```bash
+cat /tmp/repo-digest-org-cache.json 2>/dev/null || echo "{}"
+```
+
+The cache is a JSON object mapping GitHub usernames to organizations:
+```json
+{
+  "username1": "Google",
+  "username2": "Meta",
+  "username3": null
+}
+```
+
+A `null` value means we already checked and the user has no organization.
+
+**Sub-step B: If not in cache, fetch from GitHub API**
 
 ```bash
-timeout 3 gh api repos/{owner}/{repo}/commits/<commit-hash> 2>/dev/null || echo "{}"
+gh api repos/{owner}/{repo}/commits/<commit-hash>
 ```
-If successful, extract the author's GitHub username from `.author.login`.
+Check the response:
+- If it contains "API rate limit exceeded", skip organization lookup entirely
+- If successful, extract the author's GitHub username from `.author.login`
+- If `.author.login` is null or missing, the commit may be from a non-GitHub user, skip organization
+
+If you got a valid username, fetch their organizations:
+```bash
+gh api users/<username>/orgs
+```
+Check the response:
+- If "API rate limit exceeded", skip organization and don't cache
+- If successful and response is a non-empty array `[{"login": "org-name", ...}, ...]`, extract the first organization's `.login` field
+- If empty array `[]`, the user has no public organizations, cache `null` for this username
+
+**Sub-step C: Update cache**
+
+After successfully fetching organization info (or determining the user has no org), update the cache:
 
 ```bash
-timeout 3 gh api users/<username>/orgs 2>/dev/null || echo "[]"
+# Read current cache, merge new entry, write back
+echo '{"username": "OrgName"}' > /tmp/repo-digest-org-cache.json
 ```
-If successful and response contains organizations, use the first one's `.login` field.
 
-**IMPORTANT**: If either API call times out, fails, or returns empty data, skip the organization and just use the author name. Do NOT retry or wait. Organization info is supplementary and optional.
+Use proper JSON merging (you may need to read, parse, update, and write back).
+
+**IMPORTANT**: Organization info is optional. If API calls fail, return empty/null data, or hit rate limits, just use the author name without organization. Do NOT block or wait. The cache file will be cleaned up by the parent digest agent after all commits are processed.
 
 ```bash
 git -C <path> diff-tree --no-commit-id --name-only -r <commit-hash>
