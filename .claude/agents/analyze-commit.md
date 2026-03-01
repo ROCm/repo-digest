@@ -46,59 +46,48 @@ git -C <path> show --format="%an" -s <commit-hash>
 ```
 This gets the author name.
 
-**OPTIONAL - Organization Lookup with Caching:**
+```bash
+git -C <path> show --format="%ae" -s <commit-hash>
+```
+This gets the author email.
 
-Organization lookup uses a cache file at `/tmp/repo-digest-org-cache.json` to avoid redundant API calls.
+**OPTIONAL - Organization Lookup (Read-Only Cache):**
 
-**Sub-step A: Check cache first**
+The parent digest agent pre-populates an organization cache at `/tmp/repo-digest-org-cache.json` before spawning analyze-commit agents. This prevents race conditions from parallel cache writes and eliminates the need for API calls.
 
-Read the cache file if it exists:
+**Read the cache**:
 ```bash
 cat /tmp/repo-digest-org-cache.json 2>/dev/null || echo "{}"
 ```
 
-The cache is a JSON object mapping GitHub usernames to organizations:
+The cache is a JSON object mapping author emails to username and organization:
 ```json
 {
-  "username1": "Google",
-  "username2": "Meta",
-  "username3": null
+  "user1@example.com": {"username": "user1", "org": "Google"},
+  "user2@example.com": {"username": "user2", "org": "Meta"},
+  "user3@example.com": {"username": "user3", "org": null}
 }
 ```
 
-A `null` value means we already checked and the user has no organization.
+An `org` value of `null` means the user has no public organization.
 
-**Sub-step B: If not in cache, fetch from GitHub API**
+**Lookup process**:
+1. Get the author's email from the commit (using the command above)
+2. Look up the email in the cache file
+3. If found in cache and `org` is not `null`, use the organization name in your output
+4. If not found in cache or `org` is `null`, omit organization from output
 
-```bash
-gh api repos/{owner}/{repo}/commits/<commit-hash>
-```
-Check the response:
-- If it contains "API rate limit exceeded", skip organization lookup entirely
-- If successful, extract the author's GitHub username from `.author.login`
-- If `.author.login` is null or missing, the commit may be from a non-GitHub user, skip organization
+**DO NOT write to the cache file** - it's read-only for analyze-commit agents. The parent digest agent handles all cache writes.
 
-If you got a valid username, fetch their organizations:
-```bash
-gh api users/<username>/orgs
-```
-Check the response:
-- If "API rate limit exceeded", skip organization and don't cache
-- If successful and response is a non-empty array `[{"login": "org-name", ...}, ...]`, extract the first organization's `.login` field
-- If empty array `[]`, the user has no public organizations, cache `null` for this username
+**DO NOT make any GitHub API calls** - all information is pre-populated in the cache.
 
-**Sub-step C: Update cache**
+**IMPORTANT**: Organization info is optional. If the cache is empty, email is not in cache, or org is `null`:
+- Use format `by Author Name` (no parentheses)
+- Do NOT include `(Unknown)` or `(N/A)` - just omit the organization entirely
+- Do NOT make API calls - only read from the cache
+- Do NOT block or retry - continue with digest generation
 
-After successfully fetching organization info (or determining the user has no org), update the cache:
-
-```bash
-# Read current cache, merge new entry, write back
-echo '{"username": "OrgName"}' > /tmp/repo-digest-org-cache.json
-```
-
-Use proper JSON merging (you may need to read, parse, update, and write back).
-
-**IMPORTANT**: Organization info is optional. If API calls fail, return empty/null data, or hit rate limits, just use the author name without organization. Do NOT block or wait. The cache file will be cleaned up by the parent digest agent after all commits are processed.
+The cache file will be cleaned up by the parent digest agent after all commits are processed (in digest.md Step 8).
 
 ```bash
 git -C <path> diff-tree --no-commit-id --name-only -r <commit-hash>

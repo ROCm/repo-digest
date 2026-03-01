@@ -105,9 +105,72 @@ For example:
 
 If no commits are found, write a digest stating "No commits in the last <days> days" and stop.
 
+### Step 2.5: Pre-populate Organization Cache (Prevent Race Conditions)
+
+**CRITICAL**: Build the complete organization cache BEFORE spawning parallel analyze-commit agents to avoid race conditions.
+
+**Sub-step A: Extract unique authors**
+
+For each commit hash, get the author's email:
+```bash
+git -C <path> show --format="%ae" -s <commit-hash>
+```
+
+Collect all unique author emails manually (deduplicate in memory).
+
+**Sub-step B: Lookup GitHub username and organization for each email**
+
+For each unique author email:
+
+1. **Find a commit by this author** - pick any commit hash from your list that has this author email
+
+2. **Get GitHub username from commit API**:
+```bash
+gh api repos/{owner}/{repo}/commits/<commit-hash-by-this-author>
+```
+
+Extract `.author.login` (GitHub username). If the API call fails, returns rate limit errors, or `.author.login` is null, skip this author.
+
+3. **If username found, get organization**:
+```bash
+gh api users/<username>/orgs
+```
+
+- If successful and returns non-empty array, extract the first org's `.login` field
+- If empty array `[]`, this user has no public organizations (use `null` for org)
+- If rate limit or error, skip this email (don't cache)
+
+**Sub-step C: Write complete cache file**
+
+After processing all unique author emails, write the cache file once:
+
+```bash
+# Create JSON object with email → {username, org} mappings
+# Example:
+# {
+#   "user1@example.com": {"username": "user1", "org": "Google"},
+#   "user2@example.com": {"username": "user2", "org": "Meta"},
+#   "user3@example.com": {"username": "user3", "org": null}
+# }
+echo '<complete-json>' > /tmp/repo-digest-org-cache.json
+```
+
+**Cache Format**:
+- Key: author email address
+- Value: object with `username` (GitHub username) and `org` (organization name or `null`)
+
+**IMPORTANT**:
+- Do this step ONCE before spawning analyze-commit agents
+- This prevents race conditions from parallel cache writes
+- The cache allows analyze-commit agents to lookup everything using just the email (no API calls needed)
+- If GitHub API rate limits are hit, populate cache with what you have and continue
+- Empty/partial cache is acceptable - analyze-commit agents will gracefully handle missing data
+
 ### Step 3: Analyze Each Commit (PARALLEL) - MANDATORY SUB-AGENTS
 
 **YOU MUST USE THE TASK TOOL HERE. DO NOT SKIP THIS.**
+
+**PREREQUISITE**: Ensure Step 2.5 is complete - the organization cache must be populated BEFORE launching these agents.
 
 For EACH commit hash from Step 2, make a Task tool call:
 
@@ -204,6 +267,16 @@ For example: `digests/digest-2026-01-19.md`
 2. Replace `{FREQUENCY}` placeholder with the determined frequency label (Daily, Weekly, Monthly, etc.)
 3. Replace `YYYY-MM-DD` with the actual date
 4. Fill in all other content (summary, changes, stats)
+
+### Step 8: Cleanup Cache
+
+After writing the digest, remove the organization cache file:
+
+```bash
+rm -f /tmp/repo-digest-org-cache.json
+```
+
+This ensures a fresh cache for the next digest run and prevents stale data.
 
 ## Guidelines
 
