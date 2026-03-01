@@ -42,9 +42,52 @@ git -C <path> show <commit-hash>
 This shows the full commit: message, stats, and diff content. Use this to understand what actually changed.
 
 ```bash
-git -C <path> show --format="%an <%ae>" -s <commit-hash>
+git -C <path> show --format="%an" -s <commit-hash>
 ```
-This gets the author name and email in the format "Name <email@example.com>".
+This gets the author name.
+
+```bash
+git -C <path> show --format="%ae" -s <commit-hash>
+```
+This gets the author email.
+
+**OPTIONAL - Organization Lookup (Read-Only Cache):**
+
+The parent digest agent pre-populates an organization cache at `/tmp/repo-digest-org-cache.json` before spawning analyze-commit agents. This prevents race conditions from parallel cache writes and eliminates the need for API calls.
+
+**Read the cache**:
+```bash
+cat /tmp/repo-digest-org-cache.json 2>/dev/null || echo "{}"
+```
+
+The cache is a JSON object mapping author emails to username and organization:
+```json
+{
+  "user1@example.com": {"username": "user1", "org": "Google"},
+  "user2@example.com": {"username": "user2", "org": "Meta"},
+  "user3@example.com": {"username": "user3", "org": null}
+}
+```
+
+An `org` value of `null` means the user has no public organization.
+
+**Lookup process**:
+1. Get the author's email from the commit (using the command above)
+2. Look up the email in the cache file
+3. If found in cache and `org` is not `null`, use the organization name in your output
+4. If not found in cache or `org` is `null`, omit organization from output
+
+**DO NOT write to the cache file** - it's read-only for analyze-commit agents. The parent digest agent handles all cache writes.
+
+**DO NOT make any GitHub API calls** - all information is pre-populated in the cache.
+
+**IMPORTANT**: Organization info is optional. If the cache is empty, email is not in cache, or org is `null`:
+- Use format `by Author Name` (no parentheses)
+- Do NOT include `(Unknown)` or `(N/A)` - just omit the organization entirely
+- Do NOT make API calls - only read from the cache
+- Do NOT block or retry - continue with digest generation
+
+The cache file will be cleaned up by the parent digest agent after all commits are processed (in digest.md Step 8).
 
 ```bash
 git -C <path> diff-tree --no-commit-id --name-only -r <commit-hash>
@@ -76,7 +119,7 @@ Apply the priority rules from the config:
 
 Compose a digest entry with:
 - **Summary**: Brief description of what changed (under 100 characters)
-- **Author**: Include the author name and email from Step 2
+- **Author**: Always include the author name. Optionally add organization in parentheses if successfully retrieved from GitHub API (without hitting timeouts/rate limits)
 - **Impact**: 1-2 sentences explaining why this matters and who it affects
 - If the emphasis topic applies, explicitly call it out (e.g., "**ROCm impact:** ...")
 - Bold any keywords that appear
@@ -88,15 +131,17 @@ Return EXACTLY this format with no other text:
 ```
 PRIORITY: high|medium|low
 ENTRY:
-- Brief summary of what changed by Author Name <email@example.com> [short-hash](repo-url/commit/full-hash)
+- Brief summary of what changed by Author Name (Organization) [short-hash](repo-url/commit/full-hash)
 
     Impact description explaining why this matters and who it affects.
 ```
 
+If organization is not available from GitHub API, show only the author name without parentheses.
+
 ### STRICT Format Rules
 
 1. The entry MUST start with `- ` (dash space)
-2. Summary comes first, then `by Author Name <email>`, then space, then `[short-hash](full-url)`
+2. Summary comes first, then `by Author Name (Organization)` if organization is available, or just `by Author Name` if not, then space, then `[short-hash](full-url)`
 3. Short hash = first 7 characters only
 4. After the link, there MUST be a blank line
 5. Impact is a SINGLE paragraph (not bullet points), indented with exactly 4 spaces
@@ -110,7 +155,7 @@ ENTRY:
 ```
 PRIORITY: high
 ENTRY:
-- Remove persistent collective cliques from GPU backend by John Doe <john.doe@example.com> [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
+- Remove persistent collective cliques from GPU backend by John Doe (Google) [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
 
     Simplifies GPU runtime by removing unsafe NCCL clique caching that could cause deadlocks. **ROCm impact:** ROCm developers should verify collective operations still work correctly after this change.
 ```
