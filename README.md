@@ -75,6 +75,12 @@ Generated digests are uploaded as GitHub Actions artifacts. Use the included scr
 
 # Triton weekly digest
 ./scripts/download-artifacts.sh -a weekly-digest triton-weekly-digest.yml
+
+# Most recent LLVM daily digest (AMD/AMDGPU/ROCm focus)
+./scripts/download-artifacts.sh -a llvm-digest llvm-daily-digest.yml
+
+# Most recent LLVM weekly digest
+./scripts/download-artifacts.sh -a llvm-digest-weekly llvm-weekly-digest.yml
 ```
 
 Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.
