@@ -4,7 +4,7 @@ description: Given fresh review findings (from a prior review skill) and a PR nu
 argument-hint: [PR-number]
 context: fork
 agent: general-purpose
-allowed-tools: Bash(gh *), Bash(jq *), Bash(grep *), Bash(head *)
+allowed-tools: Bash(gh *), Bash(jq *), Bash(grep *), Bash(head *), Read, Grep, Glob
 ---
 
 # Update PR Review
@@ -30,7 +30,7 @@ in a previous Claude review. Each issue must appear at most once as an inline co
 
 ```bash
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api "repos/$REPO/pulls/$ARGUMENTS/comments" > /tmp/prev_comments.json
+gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/comments" | jq -s 'add // []' > /tmp/prev_comments.json
 ```
 
 From the JSON, build the following picture:
@@ -52,7 +52,9 @@ For each Claude root comment, record:
 - `path` — file path
 - `line` — line number (may have shifted due to rebasing)
 - `body` — the text of the finding
-- `human_replies` — list of `{id, body}` for any human replies in the thread
+- `human_replies` — list of `{id, body}` for any human replies in the thread, ordered by `id`
+  ascending (GitHub returns comments in creation order; IDs are monotonically increasing,
+  so the last element is always the most recent reply)
 
 ---
 
@@ -76,12 +78,12 @@ The flagged code no longer exists or the problem is corrected in the new diff,
 and there is at least one human reply in the thread (e.g. "Done", "Fixed", "Implemented").
 
 ```bash
-# 1. React 👍 on the most recent human reply (not on Claude's comment)
+# 1. React 👍 on the most recent human reply (last element of human_replies — highest id)
 gh api "repos/$REPO/pulls/comments/$HUMAN_REPLY_ID/reactions" \
   -X POST -f content="+1"
 
 # 2. Post a "Resolved" reply on Claude's original comment to close the thread
-gh api "repos/$REPO/pulls/comments/$CLAUDE_COMMENT_ID/replies" \
+gh api "repos/$REPO/pulls/$ARGUMENTS/comments/$CLAUDE_COMMENT_ID/replies" \
   -X POST -f body="Resolved ✓ — addressed in this revision."
 ```
 
@@ -95,7 +97,7 @@ The problem is fixed in the new diff, but the developer did not reply to Claude'
 
 ```bash
 # Post a "Resolved" reply on Claude's original comment
-gh api "repos/$REPO/pulls/comments/$CLAUDE_COMMENT_ID/replies" \
+gh api "repos/$REPO/pulls/$ARGUMENTS/comments/$CLAUDE_COMMENT_ID/replies" \
   -X POST -f body="Resolved ✓ — addressed in this revision."
 ```
 
@@ -109,7 +111,7 @@ The flagged code still has the problem in the new diff, and the developer replie
 
 ```bash
 # Reply to the thread with a clarification explaining the issue is still present
-gh api "repos/$REPO/pulls/comments/$CLAUDE_COMMENT_ID/replies" \
+gh api "repos/$REPO/pulls/$ARGUMENTS/comments/$CLAUDE_COMMENT_ID/replies" \
   -X POST -f body="<concise explanation of why the issue is still present and what needs to change>"
 ```
 
