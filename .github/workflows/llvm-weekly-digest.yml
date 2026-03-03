@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: llvm-digest-weekly
-          path: "digests/llvm-digest-*.md"
+          path: "digests/digest-*.md"
 
       - name: Upload Claude Execution Log
         if: always()
