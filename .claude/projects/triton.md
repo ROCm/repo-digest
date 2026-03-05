@@ -76,23 +76,21 @@ Use phrases like:
 
 ### 🔴 High Priority
 
-- [triton_kernels] Unfuse fma in reduce kernel for numeric stability [d156ef5e6] https://github.com/triton-lang/triton/commit/d156ef5e6daff73b3633ff46ce3fbf3703efba9f
+- [triton_kernels] Unfuse fma in reduce kernel for numeric stability by *Alice Chen (Google)* [d156ef5e6](https://github.com/triton-lang/triton/commit/d156ef5e6daff73b3633ff46ce3fbf3703efba9f)
 
-    Improves numeric stability in reduce kernel by unfusing FMA operations.
-    **AMD impact:** General change affecting both backends. AMD developers may want to verify numeric behavior remains consistent.
+    Improves numeric stability in reduce kernel by unfusing FMA operations. **AMD impact:** General change affecting both backends. AMD developers may want to verify numeric behavior remains consistent.
 
 ### 🟡 Medium Priority
 
-- [BACKEND][AMD] Add ScopedNoAliasAAWrapperPass to MIR swap pipeline [3e4d45522](https://github.com/triton-lang/triton/commit/3e4d455224ada01ec4e12ac2cf0fc9d0edbd1e3c)
+- [BACKEND][AMD] Add ScopedNoAliasAAWrapperPass to MIR swap pipeline by *Bob Park (AMD)* [3e4d45522](https://github.com/triton-lang/triton/commit/3e4d455224ada01ec4e12ac2cf0fc9d0edbd1e3c)
 
-    Optimization pass addition to MIR swap pipeline.**AMD impact:** AMD developers should note this pipeline optimization change. The ScopedNoAliasAAWrapperPass may improve LLVM optimization opportunities for AMD codegen.
+    Optimization pass addition to MIR swap pipeline. **AMD impact:** AMD developers should note this pipeline optimization change. The ScopedNoAliasAAWrapperPass may improve LLVM optimization opportunities for AMD codegen.
 
 ### 🟢 Low Priority
 
-- Fix tolerance for float8 x mx combinations in matmul tests [bcbcabd](https://github.com/triton-lang/triton/commit/bcbcabdd0cff6539c7168299075992b2a23ff38e)
+- Fix tolerance for float8 x mx combinations in matmul tests by *Carol Wu* [bcbcabd](https://github.com/triton-lang/triton/commit/bcbcabdd0cff6539c7168299075992b2a23ff38e)
 
-    Test tolerance fix: increases tolerance from 3e-2 to 2e-1 for float8 x mx combinations to account for compounded quantization errors.
-    **AMD impact:** Test-only change, may affect AMD matmul test pass rates with float8/mx types.
+    Test tolerance fix: increases tolerance from 3e-2 to 2e-1 for float8 x mx combinations to account for compounded quantization errors. **AMD impact:** Test-only change, may affect AMD matmul test pass rates with float8/mx types.
 
 ## Stats
 - **Total Commits**: X
@@ -106,6 +104,6 @@ Use phrases like:
 
 ### Entry Format Rules
 - Entry starts with `- ` (dash space), NOT bold `**Title**`
-- Summary first, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
+- Summary first, then `by *Author Name (Org)*` in italic, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
 - Blank line after the link
 - Impact is a SINGLE indented paragraph (4 spaces), NOT multiple bullet points

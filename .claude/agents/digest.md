@@ -145,12 +145,78 @@ Each sub-agent returns:
 ```
 PRIORITY: high|medium|low
 ENTRY:
-- Summary by John Doe <john.doe@example.com> [hash](url)
+- Summary by *John Doe <john.doe@example.com>* [hash](url)
 
     Impact description.
 ```
 
-Parse each response and group entries by priority:
+Parse each response and collect all entries.
+
+### Step 4.5: Enrich Entries with Author Organization
+
+After collecting all sub-agent results, derive each unique author's organization and replace the email with the organization name in the entries.
+
+**Sub-step A: Extract unique author emails and a commit hash for each**
+
+From the collected entries, extract all unique `<email@example.com>` values. Each entry also contains a commit hash in its `[short-hash](url/commit/full-hash)` link — save one commit hash per unique email for use in the GitHub API fallback (Sub-step C). Deduplicate so each email is resolved only once.
+
+**Sub-step B: Derive organization from email domain**
+
+For each unique email, first try to derive the organization from the email domain. Most corporate contributors use their company email:
+
+| Domain | Organization |
+|--------|-------------|
+| `@amd.com` | AMD |
+| `@google.com` | Google |
+| `@meta.com`, `@fb.com` | Meta |
+| `@nvidia.com` | NVIDIA |
+| `@intel.com` | Intel |
+| `@microsoft.com` | Microsoft |
+| `@apple.com` | Apple |
+| `@amazon.com` | Amazon |
+| `@redhat.com` | Red Hat |
+| `@ibm.com` | IBM |
+| `@qualcomm.com` | Qualcomm |
+| `@arm.com` | Arm |
+| `@samsung.com` | Samsung |
+| `@huawei.com` | Huawei |
+
+For other corporate domains not in this list, use your best judgment to derive the organization name from the domain. Extract the main organization name (e.g., `@cs.stanford.edu` → `Stanford`, `@mail.company.com` → `Company`), not the subdomain.
+
+**Sub-step C: Fallback to GitHub API for generic email domains**
+
+For personal/generic email domains (`@gmail.com`, `@outlook.com`, `@hotmail.com`, `@yahoo.com`, `@users.noreply.github.com`, etc.), attempt a GitHub API lookup:
+
+1. Pick a commit hash for that author (extracted from the entry's `[hash](url)` link in Sub-step A).
+2. **Get GitHub username**:
+```bash
+gh api repos/{owner}/{repo}/commits/<commit-hash> --jq '.author.login'
+```
+3. **If username found, get organization**:
+```bash
+gh api users/<username>/orgs --jq '.[0].login'
+```
+
+If any API call fails or returns empty, skip — this author will have no organization shown.
+
+**Sub-step D: Replace emails with organizations in entries**
+
+For each entry, find the `by *Author Name <email@example.com>*` pattern:
+- If the email has an organization, replace with `by *Author Name (Organization)*`
+- If no organization was found, replace with just `by *Author Name*` (remove the email, no parentheses)
+
+The italic markers (`*...*`) must be preserved around the author attribution.
+
+**IMPORTANT**:
+- Each unique email is resolved exactly once — efficient even with many commits by the same author
+- Domain-based lookup requires no API calls and handles the majority of cases
+- GitHub API is only used as a fallback for generic domains — keep API calls to a minimum
+- If GitHub API is unavailable or rate-limited, gracefully degrade: just show author names without org
+- Do NOT include `(Unknown)` or `(N/A)` — either show the real org or omit it entirely
+
+### Step 4.6: Group Entries by Priority
+
+Group entries by priority:
 - `high` → `### 🔴 High Priority` section
 - `medium` → `### 🟡 Medium Priority` section
 - `low` → `### 🟢 Low Priority` section
@@ -254,6 +320,7 @@ daily-digest (you)
     ├─ Task: analyze-commit (commit 3) ──┘
     │
     ├─ Collect sub-agent responses
+    ├─ Enrich with org info (gh api, deduplicated by email)
     ├─ Group by priority
     └─ Write digest file
 ```

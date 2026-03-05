@@ -85,19 +85,19 @@ Use phrases like:
 
 ### 🔴 High Priority
 
-- Add support for gfx1200 architecture in AMDGPU backend [a1b2c3d](https://github.com/llvm/llvm-project/commit/a1b2c3d)
+- Add support for gfx1200 architecture in AMDGPU backend by *John Doe (AMD)* [a1b2c3d](https://github.com/llvm/llvm-project/commit/a1b2c3d)
 
     Introduces support for next-generation AMD GPU architecture gfx1200, including new instruction encodings and scheduling models. **ROCm developers should:** Update ROCm stack to support new architecture capabilities.
 
 ### 🟡 Medium Priority
 
-- Fix incorrect LDS usage calculation for kernels with dynamic shared memory [b2c3d4e](https://github.com/llvm/llvm-project/commit/b2c3d4e)
+- Fix incorrect LDS usage calculation for kernels with dynamic shared memory by *Jane Smith (AMD)* [b2c3d4e](https://github.com/llvm/llvm-project/commit/b2c3d4e)
 
     Corrects LDS allocation size computation that could cause runtime errors on MI300 series. **AMD impact:** Fixes potential kernel launch failures with dynamic shared memory.
 
 ### 🟢 Low Priority
 
-- Add more AMDGPU lit tests for wave32 mode [c3d4e5f](https://github.com/llvm/llvm-project/commit/c3d4e5f)
+- Add more AMDGPU lit tests for wave32 mode by *Bob Lee* [c3d4e5f](https://github.com/llvm/llvm-project/commit/c3d4e5f)
 
     Expands test coverage for wave32 execution mode on RDNA architectures. Test-only change improving validation.
 
@@ -114,7 +114,7 @@ Use phrases like:
 
 ### Entry Format Rules
 - Entry starts with `- ` (dash space), NOT bold `**Title**`
-- Summary first, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
+- Summary first, then `by *Author Name (Org)*` in italic, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
 - Blank line after the link
 - Impact is a SINGLE indented paragraph (4 spaces), NOT multiple bullet points
 - Bold AMD-related keywords when they appear naturally

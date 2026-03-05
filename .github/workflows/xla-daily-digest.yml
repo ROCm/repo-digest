@@ -13,10 +13,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Install prerequisites
-        run: apt-get update && apt-get install -y git curl unzip
+      - uses: actions/checkout@v6
 
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-prerequisites
 
       - name: Checkout XLA Repository
         uses: actions/checkout@v6
@@ -72,6 +71,7 @@ jobs:
           ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.5"
           ANTHROPIC_DEFAULT_SONNET_MODEL: "Claude-Sonnet-4.5"
           ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
+          GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
           show_full_output: true
