@@ -62,17 +62,17 @@ Use phrases like:
 ## Key Changes
 
 ### 🔴 High Priority
-- Remove persistent collective cliques from GPU backend [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
+- Remove persistent collective cliques from GPU backend by *John Doe (Google)* [b2abb45](https://github.com/openxla/xla/commit/b2abb4576928cb916669162efb7bc7b7f0e1d57f)
 
     Simplifies GPU runtime by removing unsafe NCCL clique caching. **ROCm impact:** Verify collective operations still work correctly.
 
 ### 🟡 Medium Priority
-- Refactor PjRtCpuClient compilation [f8c294f](https://github.com/openxla/xla/commit/f8c294fa4e50d0c9214b75dda709490a5c4a5495)
+- Refactor PjRtCpuClient compilation by *Jane Smith (AMD)* [f8c294f](https://github.com/openxla/xla/commit/f8c294fa4e50d0c9214b75dda709490a5c4a5495)
 
     Enables proper executable loading for CPU PjRt.
 
 ### 🟢 Low Priority
-- Fix typo in documentation [abc1234](https://github.com/openxla/xla/commit/abc1234567890)
+- Fix typo in documentation by *Bob Lee* [abc1234](https://github.com/openxla/xla/commit/abc1234567890)
 
     Minor cleanup with no functional impact.
 
@@ -88,6 +88,6 @@ Use phrases like:
 
 ### Entry Format Rules
 - Entry starts with `- ` (dash space), NOT bold `**Title**`
-- Summary first, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
+- Summary first, then `by *Author Name (Org)*` in italic, then `[short-hash](full-url)` - NOT `([hash](url))` in parentheses
 - Blank line after the link
 - Impact is a SINGLE indented paragraph (4 spaces), NOT multiple bullet points
