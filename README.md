@@ -81,6 +81,12 @@ Generated digests are uploaded as GitHub Actions artifacts. Use the included scr
 
 # Most recent LLVM weekly digest
 ./scripts/download-artifacts.sh -a llvm-digest-weekly llvm-weekly-digest.yml
+
+# Most recent MaxText daily digest
+./scripts/download-artifacts.sh -a maxtext-digest maxtext-daily-digest.yml
+
+# Most recent MaxText weekly digest
+./scripts/download-artifacts.sh -a maxtext-weekly-digest maxtext-weekly-digest.yml
 ```
 
 Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.
