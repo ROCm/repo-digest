@@ -2,7 +2,7 @@ name: Weekly JAX Digest
 
 on:
   schedule:
-    - cron: '0 20 * * 0'  # Runs every Sunday at 8:00 PM UTC
+    - cron: '0 22 * * 0'  # Runs every Sunday at 10:00 PM UTC (offset from Triton at 8 PM)
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -86,7 +86,7 @@ jobs:
       - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
-          name: weekly-digest
+          name: jax-weekly-digest
           path: "digests/digest-*.md"
 
       - name: Upload Claude Execution Log

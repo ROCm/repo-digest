@@ -2,7 +2,7 @@ name: Daily JAX Digest
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Runs daily at 8:00 AM UTC
+    - cron: '0 10 * * *'  # Runs daily at 10:00 AM UTC (offset from XLA/Triton at 8, LLVM at 9)
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -87,7 +87,7 @@ jobs:
       - name: Upload Digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest
+          name: jax-digest
           path: "digests/digest-*.md"
 
       - name: Upload Claude Execution Log
