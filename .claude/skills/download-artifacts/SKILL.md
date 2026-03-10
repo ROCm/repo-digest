@@ -1,7 +1,7 @@
 ---
 name: download-artifacts
-description: Use this skill when the user wants to download GitHub Actions artifacts from repo-digest workflows. Triggers when the user mentions "download artifact", "get the digest", "fetch artifact", "latest digest", or references workflows like "triton-daily-digest", "triton-weekly-digest", "xla-daily-digest", "llvm-daily-digest", "llvm-weekly-digest", "maxtext-daily-digest", "maxtext-weekly-digest", or "test-digest".
-argument-hint: [triton|xla|llvm|maxtext|triton-weekly|llvm-weekly|maxtext-weekly|latest] [n]
+description: Use this skill when the user wants to download GitHub Actions artifacts from repo-digest workflows. Triggers when the user mentions "download artifact", "get the digest", "fetch artifact", "latest digest", or references workflows like "triton-daily-digest", "triton-weekly-digest", "xla-daily-digest", "llvm-daily-digest", "llvm-weekly-digest", "maxtext-daily-digest", "maxtext-weekly-digest", "jax-daily-digest", "jax-weekly-digest", or "test-digest".
+argument-hint: [triton|xla|llvm|maxtext|jax|triton-weekly|llvm-weekly|maxtext-weekly|jax-weekly|latest] [n]
 allowed-tools: Bash
 ---
 
@@ -22,7 +22,7 @@ If no arguments are provided, **ask the user** which workflow to download from a
 If `latest` is given without specifying a workflow, also ask which workflow.
 
 Parse the arguments to determine:
-- Which workflow to use: `triton` or `triton-daily` → `triton-daily-digest.yml`, `triton-weekly` → `triton-weekly-digest.yml`, `xla` → `xla-daily-digest.yml`, `llvm` or `llvm-daily` → `llvm-daily-digest.yml`, `llvm-weekly` → `llvm-weekly-digest.yml`, `maxtext` or `maxtext-daily` → `maxtext-daily-digest.yml`, `maxtext-weekly` → `maxtext-weekly-digest.yml`, `test` → `test-digest.yml`.
+- Which workflow to use: `triton` or `triton-daily` → `triton-daily-digest.yml`, `triton-weekly` → `triton-weekly-digest.yml`, `xla` → `xla-daily-digest.yml`, `llvm` or `llvm-daily` → `llvm-daily-digest.yml`, `llvm-weekly` → `llvm-weekly-digest.yml`, `maxtext` or `maxtext-daily` → `maxtext-daily-digest.yml`, `maxtext-weekly` → `maxtext-weekly-digest.yml`, `jax` or `jax-daily` → `jax-daily-digest.yml`, `jax-weekly` → `jax-weekly-digest.yml`, `test` → `test-digest.yml`.
 - How many artifacts: if a number is given (e.g. `3`), pass it as `-n`. Default: `1`.
 
 ## Steps
@@ -43,6 +43,8 @@ Parse the arguments to determine:
 | `llvm-weekly-digest.yml`  | Weekly LLVM Digest    | `llvm-digest-weekly`              |
 | `maxtext-daily-digest.yml`| Daily MaxText Digest  | `maxtext-digest`                  |
 | `maxtext-weekly-digest.yml`| Weekly MaxText Digest| `maxtext-weekly-digest`           |
+| `jax-daily-digest.yml`    | Daily JAX Digest      | `jax-digest`                      |
+| `jax-weekly-digest.yml`   | Weekly JAX Digest     | `jax-weekly-digest`               |
 | `test-digest.yml`         | Test Digest           | `test-digest-{project}-{days}day` |
 
 ## Script options
@@ -81,6 +83,12 @@ Parse the arguments to determine:
 
 # Most recent MaxText weekly digest
 ./scripts/download-artifacts.sh -a maxtext-weekly-digest maxtext-weekly-digest.yml
+
+# Most recent JAX daily digest
+./scripts/download-artifacts.sh -a jax-digest jax-daily-digest.yml
+
+# Most recent JAX weekly digest
+./scripts/download-artifacts.sh -a jax-weekly-digest jax-weekly-digest.yml
 ```
 
 ## Notes

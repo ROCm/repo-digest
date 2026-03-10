@@ -29,6 +29,8 @@ WORKFLOWS:
   llvm-weekly-digest.yml      "Weekly LLVM Digest"          artifact: llvm-digest-weekly
   maxtext-daily-digest.yml    "Daily MaxText Digest"        artifact: maxtext-digest
   maxtext-weekly-digest.yml   "Weekly MaxText Digest"       artifact: maxtext-weekly-digest
+  jax-daily-digest.yml        "Daily JAX Digest"            artifact: jax-digest
+  jax-weekly-digest.yml       "Weekly JAX Digest"           artifact: jax-weekly-digest
   test-digest.yml             "Test Digest"                 artifact: test-digest-{project}-{days}day
 
 EXAMPLES:
@@ -53,6 +55,12 @@ EXAMPLES:
 
   # Most recent MaxText weekly digest
   $0 -a maxtext-weekly-digest maxtext-weekly-digest.yml
+
+  # Most recent JAX daily digest
+  $0 -a jax-digest jax-daily-digest.yml
+
+  # Most recent JAX weekly digest
+  $0 -a jax-weekly-digest jax-weekly-digest.yml
 
   # Specify repo explicitly
   $0 -r ROCm/repo-digest -a digest xla-daily-digest.yml

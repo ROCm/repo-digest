@@ -87,6 +87,12 @@ Generated digests are uploaded as GitHub Actions artifacts. Use the included scr
 
 # Most recent MaxText weekly digest
 ./scripts/download-artifacts.sh -a maxtext-weekly-digest maxtext-weekly-digest.yml
+
+# Most recent JAX daily digest (GPU/ROCm/CUDA focus)
+./scripts/download-artifacts.sh -a jax-digest jax-daily-digest.yml
+
+# Most recent JAX weekly digest
+./scripts/download-artifacts.sh -a jax-weekly-digest jax-weekly-digest.yml
 ```
 
 Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.
