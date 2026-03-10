@@ -2,7 +2,7 @@ name: Weekly JAX Digest
 
 on:
   schedule:
-    - cron: '0 22 * * 0'  # Runs every Sunday at 10:00 PM UTC (offset from Triton at 8 PM)
+    - cron: '0 0 * * 1'  # Runs every Monday at 12:00 AM UTC (offset from Triton weekly Sun 8 PM, MaxText weekly Sun 10 PM, LLVM weekly Mon 10 AM)
   workflow_dispatch:  # Allows manual triggering
 
 jobs:

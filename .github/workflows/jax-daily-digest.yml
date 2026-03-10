@@ -2,7 +2,7 @@ name: Daily JAX Digest
 
 on:
   schedule:
-    - cron: '0 10 * * *'  # Runs daily at 10:00 AM UTC (offset from XLA/Triton at 8, LLVM at 9)
+    - cron: '0 11 * * *'  # Runs daily at 11:00 AM UTC (offset from XLA/Triton at 8, LLVM at 9, MaxText at 10)
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
