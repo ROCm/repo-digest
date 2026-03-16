@@ -25,7 +25,6 @@ runs:
   steps:
     - name: Install and Warmup Claude Code
       shell: bash
-      timeout-minutes: 2
       env:
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic_base_url }}
         ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ inputs.llm_gateway_key }}"
