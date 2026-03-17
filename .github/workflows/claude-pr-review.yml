@@ -42,7 +42,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}"
           ANTHROPIC_API_KEY: "sk-ant-dummy-gateway-key"
-          ANTHROPIC_MODEL: "Claude-Sonnet-4.5"
+          ANTHROPIC_MODEL: "Claude-Sonnet-4.6"
         run: |
           # Install Claude Code
           curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.31
