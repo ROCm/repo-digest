@@ -2,10 +2,11 @@ name: Claude Auto Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [review_requested]
 
 jobs:
   review:
+    if: github.event.requested_reviewer.login == 'claude[bot]'
     runs-on: build-only-repo-digest
     container: ubuntu:24.04
     permissions:
