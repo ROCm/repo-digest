@@ -2,10 +2,11 @@ name: Claude Auto Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [labeled]
 
 jobs:
   review:
+    if: github.event.label.name == 'claude-review'
     runs-on: build-only-repo-digest
     container: ubuntu:24.04
     permissions:
