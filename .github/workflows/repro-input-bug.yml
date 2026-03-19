@@ -12,8 +12,8 @@ jobs:
         shell: bash
         run: echo "hello" > /tmp/test-artifact.txt
 
-      - name: Upload artifact (v3)
-        uses: actions/upload-artifact@v3
+      - name: Upload artifact (v7)
+        uses: actions/upload-artifact@v7
         with:
           name: test-artifact
           path: /tmp/test-artifact.txt
