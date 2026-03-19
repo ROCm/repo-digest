@@ -112,6 +112,16 @@ jobs:
               "hasCompletedOnboarding": true
             }
 
+      - name: Remove claude-review label
+        if: always()
+        run: |
+          gh api \
+            --method DELETE \
+            "/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/claude-review" \
+            || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Upload Claude Execution Log
         if: always()
         uses: actions/upload-artifact@v4
