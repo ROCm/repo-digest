@@ -6,18 +6,24 @@ on:
 jobs:
   container-job:
     runs-on: build-only-repo-digest
-    container: ubuntu:24.04
+    container:
+      image: ubuntu:24.04
+      volumes:
+        - /tmp/artifacts:/artifacts
     steps:
       - name: Create test file
         shell: bash
-        run: echo "hello" > /tmp/test-artifact.txt
+        run: echo "hello" > /artifacts/test-artifact.txt
 
+  upload-job:
+    runs-on: build-only-repo-digest
+    needs: container-job
+    steps:
       - name: Upload artifact (v7)
         uses: actions/upload-artifact@v7
         with:
           name: test-artifact
-          path: /tmp/test-artifact.txt
-          include-hidden-files: false
+          path: /tmp/artifacts/test-artifact.txt
 
   no-container-job:
     runs-on: build-only-repo-digest
