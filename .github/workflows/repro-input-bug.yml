@@ -1,39 +1,43 @@
-name: Repro INPUT_ env var bug in container jobs
+ name: Repro INPUT_ env var bug in container jobs
 
-on:
-  workflow_dispatch:
+  on:
+    workflow_dispatch:
 
-jobs:
-  container-job:
-    runs-on: build-only-repo-digest
-    container:
-      image: ubuntu:24.04
-      volumes:
-        - /tmp/artifacts:/artifacts
-    steps:
-      - name: Create test file
-        shell: bash
-        run: echo "hello" > /artifacts/test-artifact.txt
+  jobs:
+    container-job:
+      runs-on: build-only-repo-digest
+      container: ubuntu:24.04
+      steps:
+        - name: Create test file in workspace
+          shell: bash
+          run: |
+            mkdir -p $GITHUB_WORKSPACE/artifacts
+            echo "hello" > $GITHUB_WORKSPACE/artifacts/test-artifact.txt
+            ls -la $GITHUB_WORKSPACE/artifacts/
 
-  upload-job:
-    runs-on: build-only-repo-digest
-    needs: container-job
-    steps:
-      - name: Upload artifact (v7)
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-artifact
-          path: /tmp/artifacts/test-artifact.txt
+    upload-job:
+      runs-on: build-only-repo-digest
+      needs: container-job
+      steps:
+        - name: Check files exist
+          run: |
+            ls -la artifacts/ || echo "artifacts directory not found"
 
-  no-container-job:
-    runs-on: build-only-repo-digest
-    steps:
-      - name: Create test file
-        shell: bash
-        run: echo "hello" > /tmp/test-artifact.txt
+        - name: Upload artifact (v7)
+          uses: actions/upload-artifact@v7
+          with:
+            name: test-artifact
+            path: artifacts/test-artifact.txt
 
-      - name: Upload artifact (v7)
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-artifact-no-container
-          path: /tmp/test-artifact.txt
+    no-container-job:
+      runs-on: build-only-repo-digest
+      steps:
+        - name: Create test file
+          shell: bash
+          run: echo "hello" > /tmp/test-artifact.txt
+
+        - name: Upload artifact (v7)
+          uses: actions/upload-artifact@v7
+          with:
+            name: test-artifact-no-container
+            path: /tmp/test-artifact.txt
