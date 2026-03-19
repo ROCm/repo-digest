@@ -8,17 +8,11 @@ jobs:
   review:
     if: github.event.label.name == 'claude-review'
     runs-on: build-only-repo-digest
-    container: ubuntu:24.04
     permissions:
       contents: read
       pull-requests: write
       id-token: write
     steps:
-      - name: Install prerequisites
-        run: |
-          apt-get update && apt-get install -y git curl unzip jq gh
-          git config --global --add safe.directory '*'
-
       - uses: actions/checkout@v6
 
       # =============================================================================

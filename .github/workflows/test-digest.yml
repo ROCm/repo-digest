@@ -6,7 +6,6 @@ on:
 jobs:
   test-digest:
     runs-on: build-only-repo-digest
-    container: ubuntu:24.04
     permissions:
       contents: read
       id-token: write
@@ -38,8 +37,6 @@ jobs:
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-prerequisites
 
       - name: Checkout ${{ matrix.project }} Repository
         uses: actions/checkout@v6
