@@ -17,6 +17,7 @@ jobs:
         with:
           name: test-artifact
           path: /tmp/test-artifact.txt
+          include-hidden-files: false
 
   no-container-job:
     runs-on: build-only-repo-digest
@@ -30,3 +31,4 @@ jobs:
         with:
           name: test-artifact-no-container
           path: /tmp/test-artifact.txt
+          include-hidden-files: false
