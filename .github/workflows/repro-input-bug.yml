@@ -6,7 +6,7 @@ on:
 jobs:
   container-job:
     runs-on: build-only-repo-digest
-    #container: ubuntu:24.04
+    container: ubuntu:24.04
     steps:
       - name: Create test file
         shell: bash
@@ -17,6 +17,7 @@ jobs:
         with:
           name: test-artifact
           path: /tmp/test-artifact.txt
+          include-hidden-files: false
 
   no-container-job:
     runs-on: build-only-repo-digest
