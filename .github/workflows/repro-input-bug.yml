@@ -17,6 +17,9 @@ jobs:
         with:
           name: test-artifact
           path: /tmp/test-artifact.txt
+          include-hidden-files: 'false'
+          overwrite: 'false'
+          archive: 'true'
 
   no-container-job:
     runs-on: build-only-repo-digest
