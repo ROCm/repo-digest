@@ -1,9 +1,9 @@
  name: Repro INPUT_ env var bug in container jobs
 
-  on:
-    workflow_dispatch:
-
-  jobs:
+ on:
+   workflow_dispatch:
+   
+ jobs:
     container-job:
       runs-on: build-only-repo-digest
       container: ubuntu:24.04
