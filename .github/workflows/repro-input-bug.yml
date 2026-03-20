@@ -9,13 +9,8 @@ jobs:
       - name: Create test file
         shell: bash
         run: echo "hello" > /tmp/test-artifact.txt
-      - name: Upload artifact (v6)
-        uses: actions/upload-artifact@v6
-        with:
-          name: test-artifact
-          path: /tmp/test-artifact.txt
-          include-hidden-files: false
-          overwrite: false
+      - name: Upload artifact (v4)
+        uses: actions/upload-artifact@v4
   no-container-job:
     runs-on: build-only-repo-digest
     steps:
