@@ -69,10 +69,9 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
 
             ## Step 1 — Check for previous Claude review comments
-            Run this command to determine whether previous Claude inline comments exist on this PR:
-            ```
-            gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments" | jq -s 'add // [] | [.[] | select(.user.login == "claude[bot]" and .in_reply_to_id == null)] | length'
-            ```
+            Use `mcp__github_inline_comment__list_inline_comments` with `user_login: "claude[bot]"` and `limit: 1`
+            to check whether any previous Claude inline comments exist on this PR.
+            If the result has `count: 0`, this is an initial review. If `count > 0`, it's a re-review.
 
             ## Step 2 — Fresh Review
             Review the PR with a focus on:
@@ -106,7 +105,7 @@ jobs:
             - Only post GitHub comments — do not submit review text as messages.
             - NEVER post the same issue twice as a new inline comment.
           claude_args: |
-            --allowedTools "Skill,mcp__github_inline_comment__create_inline_comment,Bash(gh *),Bash(git *),Bash(jq *),Bash(head *),Bash(grep *),Read,Grep,Glob"
+            --allowedTools "Skill,mcp__github_inline_comment__create_inline_comment,mcp__github_inline_comment__list_inline_comments,Bash(gh *),Bash(git *),Bash(jq *),Bash(head *),Bash(grep *),Read,Grep,Glob"
           settings: |
             {
               "hasCompletedOnboarding": true

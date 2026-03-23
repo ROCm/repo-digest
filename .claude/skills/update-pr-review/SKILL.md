@@ -4,7 +4,7 @@ description: Given fresh review findings (from a prior review skill) and a PR nu
 argument-hint: [PR-number]
 context: fork
 agent: general-purpose
-allowed-tools: Bash(gh *), Bash(jq *), Bash(grep *), Bash(head *), Read, Grep, Glob
+allowed-tools: mcp__github_inline_comment__list_inline_comments, Bash(gh *), Bash(jq *), Bash(grep *), Bash(head *), Read, Grep, Glob
 ---
 
 # Update PR Review
@@ -28,12 +28,9 @@ in a previous Claude review. Each issue must appear at most once as an inline co
 
 ## Step 2 — Fetch Previous Inline Review Comments
 
-```bash
-REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api --paginate "repos/$REPO/pulls/$ARGUMENTS/comments" | jq -s 'add // []' > /tmp/prev_comments.json
-```
+Use `mcp__github_inline_comment__list_inline_comments` (no filters) to fetch all inline comments on the PR.
 
-From the JSON, build the following picture:
+From the result, build the following picture:
 
 **Claude root comments** — entries where all of these are true:
 - `user.login == "claude[bot]"`
