@@ -53,7 +53,7 @@ jobs:
       - name: Review Pull Request
         id: claude-code
         timeout-minutes: 30
-        uses: anthropics/claude-code-action@v1
+        uses: nurmukhametov/claude-code-action@add-list-inline-comments-mcp-tool
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}"
