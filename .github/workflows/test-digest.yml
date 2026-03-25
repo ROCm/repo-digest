@@ -104,14 +104,14 @@ jobs:
             }
 
       - name: Upload Digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-digest-${{ matrix.project }}-${{ matrix.days }}day
           path: "digests/*digest-*.md"
 
       - name: Upload Claude Execution Log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claude-execution-log-${{ matrix.project }}-${{ matrix.days }}day
           path: ${{ steps.claude-code.outputs.execution_file }}
