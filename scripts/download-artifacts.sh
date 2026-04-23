@@ -31,7 +31,6 @@ WORKFLOWS:
   maxtext-weekly-digest.yml   "Weekly MaxText Digest"       artifact: maxtext-weekly-digest
   jax-daily-digest.yml        "Daily JAX Digest"            artifact: jax-digest
   jax-weekly-digest.yml       "Weekly JAX Digest"           artifact: jax-weekly-digest
-  test-digest.yml             "Test Digest"                 artifact: test-digest-{project}-{days}day
 
 EXAMPLES:
   # Most recent artifact from the Triton daily workflow
