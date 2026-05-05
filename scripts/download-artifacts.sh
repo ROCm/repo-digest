@@ -25,7 +25,6 @@ WORKFLOWS:
   triton-daily-digest.yml     "Daily TRITON Digest"         artifact: digest
   triton-weekly-digest.yml    "Weekly TRITON Digest"        artifact: weekly-digest
   xla-daily-digest.yml        "Daily XLA Digest"            artifact: digest
-  llvm-daily-digest.yml       "Daily LLVM Digest"           artifact: llvm-digest
   llvm-weekly-digest.yml      "Weekly LLVM Digest"          artifact: llvm-digest-weekly
   maxtext-daily-digest.yml    "Daily MaxText Digest"        artifact: maxtext-digest
   maxtext-weekly-digest.yml   "Weekly MaxText Digest"       artifact: maxtext-weekly-digest
@@ -42,9 +41,6 @@ EXAMPLES:
   # Latest XLA daily and latest Triton weekly (different artifact names, two calls)
   $0 -a digest xla-daily-digest.yml
   $0 -a weekly-digest triton-weekly-digest.yml
-
-  # Most recent LLVM daily digest
-  $0 -a llvm-digest llvm-daily-digest.yml
 
   # Most recent LLVM weekly digest
   $0 -a llvm-digest-weekly llvm-weekly-digest.yml
