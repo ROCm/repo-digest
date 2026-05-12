@@ -19,6 +19,9 @@ inputs:
   llm_gateway_key:
     description: Subscription key for the LLM gateway
     required: true
+  user_ntid:
+    description: NTID identifying the human user on whose behalf the gateway call is made
+    required: true
 
 runs:
   using: composite
@@ -27,7 +30,9 @@ runs:
       shell: bash
       env:
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic_base_url }}
-        ANTHROPIC_CUSTOM_HEADERS: "Ocp-Apim-Subscription-Key: ${{ inputs.llm_gateway_key }}"
+        ANTHROPIC_CUSTOM_HEADERS: |
+          Ocp-Apim-Subscription-Key: ${{ inputs.llm_gateway_key }}
+          user: ${{ inputs.user_ntid }}
         ANTHROPIC_API_KEY: "sk-ant-dummy-gateway-key"
         ANTHROPIC_MODEL: "Claude-Sonnet-4.5"
       run: |
