@@ -22,13 +22,6 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      # WORKAROUND: Pre-install and warmup Claude Code
-      - uses: ./.github/actions/warmup-claude-code
-        with:
-          anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
-          llm_gateway_key: ${{ secrets.LLM_GATEWAY_KEY }}
-          user_ntid: ${{ secrets.USER_NTID }}
-
       - name: Generate Digest
         id: claude-code
         timeout-minutes: 30
