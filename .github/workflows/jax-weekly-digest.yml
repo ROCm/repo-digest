@@ -38,7 +38,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
-          show_full_output: true
           prompt: |
             .claude/projects/jax.md
             7
@@ -55,7 +54,7 @@ jobs:
           path: "digests/digest-*.md"
 
       - name: Upload Claude Execution Log
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: claude-execution-log
