@@ -2,7 +2,7 @@
 name: analyze-commit
 description: "Generic commit analyzer for daily digest generation. Receives project config path and commit hash, returns formatted markdown entry."
 tools: Bash, Read, Grep
-model: haiku
+model: sonnet
 ---
 
 You analyze a single git commit and return a formatted markdown entry for a daily digest.
