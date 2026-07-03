@@ -267,6 +267,8 @@ For example: `digests/digest-2026-01-19.md`
 
 **CRITICAL**: Write to `<directory>/`, NOT inside the repository folder. Do NOT write to `<path>/<directory>/`.
 
+**CRITICAL**: Pass a **relative** path to the Write tool (e.g. `digests/digest-2026-01-19.md`), exactly as shown above. Do NOT construct an absolute path yourself (e.g. `/home/runner/work/...`) — guessed absolute paths do not match the actual CI working directory and will cause the file to be written where the upload step can't find it.
+
 **Template Processing**:
 1. Take the digest template from the config file
 2. Replace `{FREQUENCY}` placeholder with the determined frequency label (Daily, Weekly, Monthly, etc.)
@@ -299,6 +301,7 @@ When running in GitHub Actions via `claude-code-action`, certain operations may 
 **MANDATORY**: Before writing the digest file with the Write tool, verify ALL of the following:
 
 - [ ] **Sub-agents used**: You used the Task tool with `analyze-commit` for EVERY commit (if you didn't, STOP and redo Step 3)
+- [ ] **Relative path**: The Write tool call uses a relative path (`<directory>/<filename_prefix>-YYYY-MM-DD.md`), not an absolute path
 - [ ] **Priority emojis**: All three priority sections use emojis (🔴, 🟡, 🟢)
 - [ ] **Commit link format**: Every commit uses `[hash](url/commit/hash)` format
 - [ ] **Date accuracy**: Filename date matches the actual date being analyzed
