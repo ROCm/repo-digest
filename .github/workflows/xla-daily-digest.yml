@@ -41,7 +41,7 @@ jobs:
           prompt: |
             .claude/projects/xla.md
             1
-          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
+          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task,TaskOutput"
           settings: |
             {
               "hasCompletedOnboarding": true
