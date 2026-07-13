@@ -139,7 +139,7 @@ Task call 2:
 3. The prompt is exactly two lines: config path, then commit hash
 4. Do NOT analyze commits yourself - the sub-agents do this
 
-**CRITICAL: NEVER end your turn while sub-agents are still running.** Task calls may run in the background — do NOT reply with a message like "I'll wait for them to complete" and stop. That ends the session with no digest written; there is no later turn where you get resumed. For every Task call, immediately call `TaskOutput` with `block: true` on its `task_id` to force the wait and retrieve its result before doing anything else. Do not produce a final response until every sub-agent's result has been retrieved this way and Step 7 (Write Digest) has completed.
+**CRITICAL: NEVER end your turn while sub-agents are still running.** Task calls run in the background, and there is no `TaskOutput` tool available in this environment to force-block on them — do NOT call it, it will fail. Instead, each background sub-agent's result is delivered to you automatically as a notification once it completes; you do not need to poll or fetch it explicitly. Keep taking small actions (e.g. re-reading the config, preparing stats) turn after turn until you have received a completion notification for every commit you spawned a sub-agent for. Do NOT reply with a message like "I'll wait for them to complete" and stop — that ends the session with no digest written and there is no later turn where you get resumed. Do not produce a final response until every sub-agent's result has arrived via notification and Step 7 (Write Digest) has completed.
 
 ### Step 4: Collect and Parse Results
 

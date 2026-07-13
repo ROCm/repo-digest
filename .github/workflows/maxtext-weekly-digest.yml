@@ -41,7 +41,7 @@ jobs:
           prompt: |
             .claude/projects/maxtext.md
             7
-          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task,TaskOutput"
+          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
           settings: |
             {
               "hasCompletedOnboarding": true
