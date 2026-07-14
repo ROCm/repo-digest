@@ -7,55 +7,17 @@ on:
 
 jobs:
   digest:
-    runs-on: build-only-repo-digest
+    uses: ./.github/workflows/_digest.yml
     permissions:
       contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Checkout JAX Repository
-        uses: actions/checkout@v6
-        with:
-          repository: jax-ml/jax
-          path: jax
-          ref: main
-          fetch-depth: 0
-
-      - name: Generate Digest
-        id: claude-code
-        timeout-minutes: 60
-        uses: anthropics/claude-code-action@v1
-        env:
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_CUSTOM_HEADERS: |
-            Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}
-            user: ${{ secrets.USER_NTID }}
-          ANTHROPIC_MODEL: "claude-sonnet-5"
-          ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.6"
-          ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5"
-          ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
-          GH_TOKEN: ${{ github.token }}
-        with:
-          anthropic_api_key: "sk-ant-dummy-gateway-key"
-          prompt: |
-            .claude/projects/jax.md
-            7
-          claude_args: "--agent digest --allowedTools Bash,Write,Edit,Read,Glob,Grep,TodoWrite,Task"
-          settings: |
-            {
-              "hasCompletedOnboarding": true
-            }
-
-      - name: Upload Digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: jax-weekly-digest
-          path: "digests/digest-*.md"
-
-      - name: Upload Claude Execution Log
-        if: always() && github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: claude-execution-log
-          path: ${{ steps.claude-code.outputs.execution_file }}
+    with:
+      repository: jax-ml/jax
+      checkout_path: jax
+      config: .claude/projects/jax.md
+      days: 7
+      artifact_name: jax-weekly-digest
+      timeout_minutes: 60
+    secrets:
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      LLM_GATEWAY_KEY: ${{ secrets.LLM_GATEWAY_KEY }}
+      USER_NTID: ${{ secrets.USER_NTID }}

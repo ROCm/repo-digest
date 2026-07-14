@@ -1,0 +1,86 @@
+name: Digest (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: "Target repository to analyze (owner/name)"
+        required: true
+        type: string
+      checkout_path:
+        description: "Local path to check the target repo out to (matches 'path' in the project config)"
+        required: true
+        type: string
+      config:
+        description: "Path to the project config file (e.g. .claude/projects/xla.md)"
+        required: true
+        type: string
+      days:
+        description: "Time window in days (1 = daily, 7 = weekly)"
+        required: true
+        type: number
+      artifact_name:
+        description: "Name of the uploaded digest artifact"
+        required: true
+        type: string
+      timeout_minutes:
+        description: "Timeout for the digest generation step"
+        required: false
+        type: number
+        default: 30
+    secrets:
+      ANTHROPIC_BASE_URL:
+        required: true
+      LLM_GATEWAY_KEY:
+        required: true
+      USER_NTID:
+        required: true
+
+jobs:
+  digest:
+    runs-on: build-only-repo-digest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Checkout Target Repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.repository }}
+          path: ${{ inputs.checkout_path }}
+          ref: main
+          fetch-depth: 0
+
+      - name: Generate Digest
+        timeout-minutes: ${{ inputs.timeout_minutes }}
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: |
+            Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}
+            user: ${{ secrets.USER_NTID }}
+          ANTHROPIC_API_KEY: "sk-ant-dummy-gateway-key"
+          ANTHROPIC_MODEL: "claude-sonnet-5"
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.6"
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5"
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
+          GH_TOKEN: ${{ github.token }}
+          DIGEST_VERBOSE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          scripts/generate-digest.sh "${{ inputs.config }}" "${{ inputs.days }}" 2>&1 | tee digest-run.log
+
+      - name: Upload Digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: "digests/digest-*.md"
+
+      - name: Upload Debug Logs
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-debug-logs
+          path: |
+            digest-run.log
+            summaries/
