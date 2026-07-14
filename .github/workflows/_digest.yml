@@ -52,6 +52,15 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Install Claude Code CLI
+        run: |
+          if command -v claude >/dev/null 2>&1; then
+            echo "claude already installed: $(command -v claude)"
+          else
+            curl -fsSL https://claude.ai/install.sh | bash
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Generate Digest
         timeout-minutes: ${{ inputs.timeout_minutes }}
         env:
