@@ -69,9 +69,9 @@ jobs:
             Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}
             user: ${{ secrets.USER_NTID }}
           ANTHROPIC_API_KEY: "sk-ant-dummy-gateway-key"
-          ANTHROPIC_MODEL: "claude-sonnet-5"
-          ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.6"
-          ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5"
+          ANTHROPIC_MODEL: "claude-sonnet-5-5"
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5"
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5"
           ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
           GH_TOKEN: ${{ github.token }}
           DIGEST_VERBOSE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
