@@ -24,9 +24,9 @@ jobs:
           ANTHROPIC_CUSTOM_HEADERS: |
             Ocp-Apim-Subscription-Key: ${{ secrets.LLM_GATEWAY_KEY }}
             user: ${{ secrets.USER_NTID }}
-          ANTHROPIC_MODEL: "Claude-Opus-4.6"
-          ANTHROPIC_DEFAULT_OPUS_MODEL: "Claude-Opus-4.6"
-          ANTHROPIC_DEFAULT_SONNET_MODEL: "Claude-Sonnet-4.6"
+          ANTHROPIC_MODEL: "claude-opus-5-5"
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5"
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5"
           ANTHROPIC_DEFAULT_HAIKU_MODEL: "Claude-Haiku-4.5"
         with:
           anthropic_api_key: "sk-ant-dummy-gateway-key"
