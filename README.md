@@ -64,11 +64,18 @@ See the [`xla_digest_examples/`](./xla_digest_examples/) directory for sample di
 
 ## Read verl reports in the browser
 
-The `Daily verl Digest` workflow tracks non-merge commits on
-[`verl-project/verl`](https://github.com/verl-project/verl)'s `main` branch
-over the last day. It runs daily at **12:17 UTC (20:17 China Standard Time)**
+The `Daily verl Digest` workflow tracks **only commits already merged into
+[`verl-project/verl`](https://github.com/verl-project/verl)'s `main` branch**,
+using commit timestamps from the last day. Open or draft PRs, closed-but-unmerged
+PRs, and commits only on unmerged branches are excluded.
+It runs daily at **12:17 UTC (20:17 China Standard Time)**
 and produces an English digest focused on training, rollout, distributed
 backends, and upgrade compatibility. GitHub schedules can be delayed.
+
+Commit selection reads the checked-out `main` history with `git log --no-merges`.
+Here, `--no-merges` skips Git merge wrapper commits to avoid duplicate entries;
+the underlying commits from merged branches and commits landed through squash
+or rebase merges are included. It does not select open PRs.
 
 After the workflow's first successful publication, open these paths in **the
 repository running the workflow**, on the **`digest-reports` branch**:

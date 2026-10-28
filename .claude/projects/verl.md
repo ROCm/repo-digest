@@ -10,6 +10,18 @@
 - **directory**: digests
 - **filename_prefix**: digest
 
+## Commit Scope
+
+Only report commits already merged into `verl-project/verl`'s `main` branch.
+Use the checked-out `main` history as the source of truth. Exclude open or
+draft PRs, closed-but-unmerged PRs, and commits only present on unmerged branches.
+Do not describe proposed changes as available in verl.
+
+The generator uses `git log main --no-merges`: it analyzes the underlying
+commits from merged branches, including commits landed through squash and
+rebase merges, while skipping merge wrapper commits to avoid duplicate entries.
+The rolling time window is based on commit timestamps, not PR creation dates.
+
 ## Focus Areas
 
 **Training and RL Algorithms** (highest priority):
@@ -82,7 +94,7 @@ priority headings used by the agents.
 [Summarize the most important developments in 1–2 sentences.]
 
 Source: [verl-project/verl](https://github.com/verl-project/verl), branch: `main`.
-Coverage: non-merge commits in the last {days} day(s).
+Coverage: commits already merged into `main`, with commit timestamps in the last {days} day(s). Open and unmerged PRs are excluded.
 
 ## Key Changes
 
@@ -114,4 +126,4 @@ Coverage: non-merge commits in the last {days} day(s).
 - Start each entry with `- `, followed by an English summary, `by *Author Name (Org)*`, and `[short-hash](full-commit-url)`.
 - After a blank line, write one impact paragraph indented by four spaces.
 - Count Analyzed Commits from the per-commit summaries. If it is below Total Commits, explicitly state that the report is incomplete; missing analyses do not imply no changes.
-- If there are no commits, state "No new non-merge commits in the last {days} day(s)" and use zeroed stats.
+- If there are no commits, state "No commits already merged into main have commit timestamps within the last {days} day(s)" and use zeroed stats.
