@@ -68,18 +68,34 @@ The `Weekly verl Digest` workflow tracks **only commits already merged into
 [`verl-project/verl`](https://github.com/verl-project/verl)'s `main` branch**,
 using commit timestamps from the last seven days. Open or draft PRs, closed-but-unmerged
 PRs, and commits only on unmerged branches are excluded.
+It also summarizes [newly submitted issues](https://github.com/verl-project/verl/issues)
+in a separate section, including issues that have since closed. Issues are
+selected by creation time in the same seven-day window; older issues that were
+only updated during the window are excluded. Each entry links to the issue and
+shows its state at collection time. Reported concerns and feature requests are
+kept separate from shipped changes, and a closed issue does not imply a merged fix.
 It runs every **Friday at 07:00 China Standard Time (Thursday at 23:00 UTC)**
 and produces an English digest focused on training, rollout, distributed
 backends, and upgrade compatibility. GitHub schedules can be delayed.
 
 Manual runs are also supported: a Wednesday run covers the seven days preceding
 that run and does not change the Friday schedule. Reports from overlapping
-windows may contain the same commits.
+windows may contain the same commits and issues.
 
 Commit selection reads the checked-out `main` history with `git log --no-merges`.
 Here, `--no-merges` skips Git merge wrapper commits to avoid duplicate entries;
 the underlying commits from merged branches and commits landed through squash
 or rebase merges are included. It does not select open PRs.
+
+The verl configuration opts into issue collection with `- **issue_scope**: created`.
+The generator freezes the UTC window at the start of each run and uses `gh api`
+to fetch all issue pages, exclude PRs, and filter by `created_at`. The compiler
+reads this data from `summaries/issues.json` and includes issues even if no
+commits landed in the window. API failures stop generation rather than claiming
+there were no issues. The runner needs Python 3 and GitHub CLI; the existing
+`GH_TOKEN` supplies authentication for reading this public repository. Other
+projects retain commit-only coverage unless they explicitly opt in and add an
+issues section to their report template.
 
 After the workflow's first successful publication, open these paths in **the
 repository running the workflow**, on the **`digest-reports` branch**:
@@ -110,7 +126,7 @@ default branch. The publishing helper requires a clean, disposable checkout.
 Identical reruns do not create an extra commit; another run on the same UTC date
 replaces that date's report. Analysis uses a rolling seven-day window, not a
 persistent commit cursor, so long gaps between runs can leave coverage gaps.
-The separate `verl-recipe` repository, unmerged PRs, issues, and release events
+The separate `verl-recipe` repository, unmerged PRs, and release events
 are outside this workflow's scope.
 
 ## Downloading Artifacts
