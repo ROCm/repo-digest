@@ -64,13 +64,17 @@ See the [`xla_digest_examples/`](./xla_digest_examples/) directory for sample di
 
 ## Read verl reports in the browser
 
-The `Daily verl Digest` workflow tracks **only commits already merged into
+The `Weekly verl Digest` workflow tracks **only commits already merged into
 [`verl-project/verl`](https://github.com/verl-project/verl)'s `main` branch**,
-using commit timestamps from the last day. Open or draft PRs, closed-but-unmerged
+using commit timestamps from the last seven days. Open or draft PRs, closed-but-unmerged
 PRs, and commits only on unmerged branches are excluded.
-It runs daily at **12:17 UTC (20:17 China Standard Time)**
+It runs every **Friday at 12:17 UTC (20:17 China Standard Time)**
 and produces an English digest focused on training, rollout, distributed
 backends, and upgrade compatibility. GitHub schedules can be delayed.
+
+Manual runs are also supported: a Wednesday run covers the seven days preceding
+that run and does not change the Friday schedule. Reports from overlapping
+windows may contain the same commits.
 
 Commit selection reads the checked-out `main` history with `git log --no-merges`.
 Here, `--no-merges` skips Git merge wrapper commits to avoid duplicate entries;
@@ -98,13 +102,13 @@ To activate this in a fork or another repository:
    `.github/workflows/_digest.yml` to an available runner and model service.
 3. Allow the publishing job's `GITHUB_TOKEN` to write to `digest-reports`.
    Repository rulesets must permit creation and updates of this branch.
-4. Open **Actions → Daily verl Digest → Run workflow** for the first report.
+4. Open **Actions → Weekly verl Digest → Run workflow** for the first report.
 
 The generation job has read-only repository access. A separate publishing job
 commits only the Markdown reports to `digest-reports`; it does not update the
 default branch. The publishing helper requires a clean, disposable checkout.
 Identical reruns do not create an extra commit; another run on the same UTC date
-replaces that date's report. Analysis uses a rolling one-day window, not a
+replaces that date's report. Analysis uses a rolling seven-day window, not a
 persistent commit cursor, so long gaps between runs can leave coverage gaps.
 The separate `verl-recipe` repository, unmerged PRs, issues, and release events
 are outside this workflow's scope.
@@ -138,8 +142,8 @@ Generated digests are uploaded as GitHub Actions artifacts. Use the included scr
 # Most recent JAX weekly digest
 ./scripts/download-artifacts.sh -a jax-weekly-digest jax-weekly-digest.yml
 
-# Most recent verl daily digest (also published for browser reading)
-./scripts/download-artifacts.sh -a verl-digest verl-daily-digest.yml
+# Most recent verl weekly digest (also published for browser reading)
+./scripts/download-artifacts.sh -a verl-digest verl-weekly-digest.yml
 ```
 
 Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.

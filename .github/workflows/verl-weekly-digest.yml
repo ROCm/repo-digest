@@ -1,8 +1,8 @@
-name: Daily verl Digest
+name: Weekly verl Digest
 
 on:
   schedule:
-    - cron: '17 12 * * *'  # Daily at 12:17 UTC / 20:17 China Standard Time
+    - cron: '17 12 * * 5'  # Fridays at 12:17 UTC / 20:17 China Standard Time
   workflow_dispatch:
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
 
 # Serialize generation and publication, including manual runs.
 concurrency:
-  group: verl-daily-digest
+  group: verl-weekly-digest
   cancel-in-progress: false
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       repository: verl-project/verl
       checkout_path: verl
       config: .claude/projects/verl.md
-      days: 1
+      days: 7
       artifact_name: verl-digest
       timeout_minutes: 60
     secrets:
