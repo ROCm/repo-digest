@@ -1,0 +1,73 @@
+name: Weekly miles Digest
+
+on:
+  schedule:
+    - cron: '0 23 * * 4'  # Thursdays at 23:00 UTC / Fridays at 07:00 China Standard Time
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize generation and publication, including manual runs.
+concurrency:
+  group: miles-weekly-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    uses: ./.github/workflows/_digest.yml
+    with:
+      # Analyze changes already merged into the target's main branch only.
+      # The reusable workflow checks out main; open PRs are not analyzed.
+      repository: radixark/miles
+      checkout_path: miles
+      config: .claude/projects/miles.md
+      days: 7
+      artifact_name: miles-digest
+      timeout_minutes: 60
+    secrets:
+      ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+      LLM_GATEWAY_KEY: ${{ secrets.LLM_GATEWAY_KEY }}
+      USER_NTID: ${{ secrets.USER_NTID }}
+
+  publish:
+    name: Publish browser-readable report
+    needs: digest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout publishing script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: automation
+          persist-credentials: false
+
+      # A separate, clean checkout keeps branch switching away from the script
+      # and the downloaded artifact. Only this job receives a write token.
+      - name: Checkout report repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: published
+
+      - name: Download this run's digest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: miles-digest
+          path: downloaded
+
+      - name: Publish latest and dated reports
+        # Other weekly digests may advance the shared reports branch while
+        # this job is publishing. The helper refreshes origin on each attempt.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            : > "$GITHUB_STEP_SUMMARY"
+            if bash automation/scripts/publish-digest.sh downloaded published miles; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt 5 ]]; then
+              sleep "$((attempt * 2))"
+            fi
+          done
+          exit 1

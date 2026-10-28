@@ -2,6 +2,8 @@
 
 Automated summaries of changes to any open source repository using Claude Code. Generate weekly, monthly, or custom-frequency digests with AI-powered analysis.
 
+Weekly project reports can be read directly in GitHub. See the [project guides](docs/) for schedules, setup, and browser URLs.
+
 ## Features
 
 - **Flexible Scheduling** — Generate digests weekly, monthly, or on any custom schedule
