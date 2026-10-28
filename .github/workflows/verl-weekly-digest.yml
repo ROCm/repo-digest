@@ -2,7 +2,7 @@ name: Weekly verl Digest
 
 on:
   schedule:
-    - cron: '17 12 * * 5'  # Fridays at 12:17 UTC / 20:17 China Standard Time
+    - cron: '0 23 * * 4'  # Thursdays at 23:00 UTC / Fridays at 07:00 China Standard Time
   workflow_dispatch:
 
 permissions:

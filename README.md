@@ -68,7 +68,7 @@ The `Weekly verl Digest` workflow tracks **only commits already merged into
 [`verl-project/verl`](https://github.com/verl-project/verl)'s `main` branch**,
 using commit timestamps from the last seven days. Open or draft PRs, closed-but-unmerged
 PRs, and commits only on unmerged branches are excluded.
-It runs every **Friday at 12:17 UTC (20:17 China Standard Time)**
+It runs every **Friday at 07:00 China Standard Time (Thursday at 23:00 UTC)**
 and produces an English digest focused on training, rollout, distributed
 backends, and upgrade compatibility. GitHub schedules can be delayed.
 
