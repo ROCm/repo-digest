@@ -68,6 +68,10 @@ if [[ ! -f "$CONFIG" ]]; then
   echo "Config file not found: $CONFIG" >&2
   exit 2
 fi
+if [[ ! "$DAYS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Days must be a positive integer" >&2
+  exit 2
+fi
 
 # Parse a `- **key**: value` line from the config.
 config_value() {
@@ -80,6 +84,11 @@ config_value() {
 
 REPO_PATH="$(config_value path)"
 BRANCH="$(config_value branch)"
+ISSUE_SCOPE="$(config_value issue_scope || true)"
+if [[ -n "$ISSUE_SCOPE" && "$ISSUE_SCOPE" != "created" ]]; then
+  echo "Unsupported issue_scope: $ISSUE_SCOPE (expected 'created')" >&2
+  exit 2
+fi
 
 if [[ -z "$REPO_PATH" || -z "$BRANCH" ]]; then
   echo "Could not parse 'path' and 'branch' from $CONFIG" >&2
@@ -95,11 +104,18 @@ echo "==> Repo:    $REPO_PATH (branch $BRANCH)"
 echo "==> Window:  last $DAYS day(s)"
 echo "==> Jobs:    $JOBS concurrent"
 
+# Freeze one window for commit selection, issue collection, and compiler stats.
+export DIGEST_WINDOW_END
+export DIGEST_WINDOW_START
+DIGEST_WINDOW_END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+DIGEST_WINDOW_START="$(date -u --date="$DIGEST_WINDOW_END - $DAYS days" +%Y-%m-%dT%H:%M:%SZ)"
+
 # ---------------------------------------------------------------------------
 # Phase 0: gather commit hashes
 # ---------------------------------------------------------------------------
 mapfile -t HASHES < <(git -C "$REPO_PATH" log \
-  --since="$DAYS days ago" \
+  --since="$DIGEST_WINDOW_START" \
+  --until="$DIGEST_WINDOW_END" \
   --format="%H" \
   --no-merges \
   "$BRANCH")
@@ -110,8 +126,18 @@ echo "==> Found ${#HASHES[@]} commit(s)"
 rm -rf "$SUMMARY_DIR"
 mkdir -p "$SUMMARY_DIR"
 
+# Issue collection is opt-in. Fail before compilation if GitHub is unavailable;
+# an unavailable source must not produce a misleading "no issues" report.
+if [[ "$ISSUE_SCOPE" == "created" ]]; then
+  python3 "$(dirname "$SCRIPT_PATH")/collect-issues.py" \
+    --repo-url "$(config_value url)" \
+    --since "$DIGEST_WINDOW_START" \
+    --until "$DIGEST_WINDOW_END" \
+    --output "$SUMMARY_DIR/issues.json"
+fi
+
 if [[ ${#HASHES[@]} -eq 0 ]]; then
-  echo "==> No commits in window; skipping analysis, digest agent will emit an empty digest"
+  echo "==> No commits in window; skipping commit analysis, continuing to compile digest"
 else
   # -------------------------------------------------------------------------
   # Phase 1: parallel per-commit analysis (bounded concurrency).
