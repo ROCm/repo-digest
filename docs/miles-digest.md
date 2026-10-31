@@ -10,6 +10,19 @@ closed-but-unmerged PRs, and unmerged branches. Git's `--no-merges` skips merge
 wrapper commits, while underlying commits and squash/rebase integrations are
 included. This is a rolling commit-time window, not a PR `merged_at` query.
 
+The report also summarizes newly submitted issues from
+[radixark/miles/issues](https://github.com/radixark/miles/issues) in a
+separate **Newly Submitted Issues** section. Selection uses `created_at` in
+the same seven-day window and excludes PRs and older issues that were only
+updated. Each issue includes its number, link, and open/closed state at
+collection time. Reported problems and requests are distinct from shipped
+changes; closing an issue does not establish that a fix was merged.
+
+The configuration enables this with `issue_scope: created`, reusing the
+shared issue collector and compiler introduced in #36. Reports show the
+fixed UTC start/end timestamps and separate new-issue counts, including
+when there are no commits. Issue collection failures stop generation.
+
 ## Read reports in GitHub
 
 After the first successful publication, the repository running the workflow has:
@@ -38,7 +51,7 @@ an extra commit; another run on the same UTC date replaces that dated report.
 4. Open **Actions → Weekly miles Digest → Run workflow**.
 
 A manual Wednesday run covers the seven days before that run; the Friday
-schedule remains in place. Overlapping windows can repeat commits. GitHub
+schedule remains in place. Overlapping windows can repeat commits and issues. GitHub
 schedules can be delayed, and gaps longer than seven days can leave coverage
 gaps. Model analysis failures may leave a report incomplete; check its analyzed
 and total commit counts.

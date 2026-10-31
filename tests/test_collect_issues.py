@@ -32,11 +32,11 @@ def issue(number, created_at=START, **extra):
 class CollectIssuesTests(unittest.TestCase):
     def collect_pages(self, pages):
         with patch.object(collector.subprocess, "run") as run:
-            run.return_value.stdout = json.dumps(pages)
+            run.return_value.stdout = "\n".join(json.dumps(page, indent=2) for page in pages)
             result = collector.collect(REPO_URL, START, END)
         command = run.call_args.args[0]
         self.assertIn("--paginate", command)
-        self.assertIn("--slurp", command)
+        self.assertNotIn("--slurp", command)
         self.assertIn("state=all", command)
         self.assertIn("per_page=100", command)
         return result
@@ -66,7 +66,10 @@ class CollectIssuesTests(unittest.TestCase):
                 collector.collect(REPO_URL, START, END)
 
     def test_invalid_response_is_rejected(self):
-        for response in ('{"message":"rate limit"}', '[[{"number":1}]]', "invalid JSON"):
+        for response in (
+            '{"message":"rate limit"}', '[[{"number":1}]]', "invalid JSON",
+            "", "  ", "[] trailing", '[]\n{"message":"error"}',
+        ):
             with self.subTest(response=response):
                 with patch.object(collector.subprocess, "run") as run:
                     run.return_value.stdout = response
@@ -106,10 +109,14 @@ class GenerateDigestIssueTests(unittest.TestCase):
         self.config = self.root / "project.md"
         self.configure(issues=True)
         self.fixture = self.root / "issues-response.json"
-        self.fixture.write_text(json.dumps([[issue(
+        self.fixture.write_text(json.dumps([issue(
             42, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        )]]))
-        self.fake_tool("gh", '''from pathlib import Path
+        )]))
+        self.fake_tool("gh", '''import sys
+from pathlib import Path
+if "--slurp" in sys.argv:
+    print("unknown flag: --slurp", file=sys.stderr)
+    sys.exit(1)
 Path("gh-called").touch()
 print(Path("issues-response.json").read_text())
 ''')
@@ -181,7 +188,7 @@ else:
         self.assertEqual(len(data["issues"]["issues"]), 1)
 
     def test_empty_issue_window_is_a_successful_collection(self):
-        self.fixture.write_text("[[]]")
+        self.fixture.write_text("[]")
         result = self.generate()
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads((self.root / "compiler-inputs.json").read_text())
