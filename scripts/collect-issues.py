@@ -32,7 +32,7 @@ def collect(repo_url, since, until):
     api_since = (start - timedelta(seconds=1)).isoformat()
     result = subprocess.run(
         [
-            "gh", "api", "--method", "GET", "--paginate", "--slurp",
+            "gh", "api", "--method", "GET", "--paginate",
             f"repos/{repository}/issues",
             "-f", "state=all", "-f", f"since={api_since}",
             "-f", "sort=created", "-f", "direction=asc",
@@ -40,9 +40,21 @@ def collect(repo_url, since, until):
         ],
         check=True, capture_output=True, text=True,
     )
-    pages = json.loads(result.stdout)
-    if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
-        raise ValueError("Expected paginated issue arrays from GitHub")
+    # Older GitHub CLI versions support --paginate but not --slurp. Decode
+    # the successive JSON page arrays directly, including pretty-printed pages.
+    decoder = json.JSONDecoder()
+    pages = []
+    offset = 0
+    while offset < len(result.stdout):
+        if result.stdout[offset].isspace():
+            offset += 1
+            continue
+        page, offset = decoder.raw_decode(result.stdout, offset)
+        if not isinstance(page, list) or not all(isinstance(item, dict) for item in page):
+            raise ValueError("Expected issue arrays from GitHub")
+        pages.append(page)
+    if not pages:
+        raise ValueError("GitHub returned no issue pages")
 
     issues = {}
     for page in pages:
