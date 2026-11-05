@@ -1,156 +1,144 @@
-# verl Weekly Digest - 2026-11-03
+# verl Weekly Digest - 2026-11-05
 
 ## Summary
-Low-precision work dominated the week: native NVFP4 W4A4 training with **vLLM** **rollout** landed for Blackwell, NVFP4 QAT moved to per-token activations with a **breaking** removal of FSDP QAT and SGLang static NVFP4 refit, TileLang FP8/MXFP8/MXFP4 QAT kernels were added, FP8 KV-cache garbage rollouts were fixed, and the DeepSeek-V4 VeOmni recipe was fixed for **ROCm**/**AMD**. Newly submitted issues mostly report suspected **training correctness** problems (GMPO with IcePop, k3 policy-gradient **distillation**, multi-turn token merging, V1 metric aggregation); these are user reports, not confirmed regressions.
+Low-precision work landed on `main` this week. Commits added native NVFP4 W4A4 training and **rollout** on Blackwell, moved NVFP4 QAT to per-token activations, and added TileLang FP8/MXFP8/MXFP4 QAT kernels. These carry breaking changes: FSDP QAT and the **SGLang** static NVFP4 refit are removed, and new `modelopt`/`tilelang` pins apply. Other high-priority commits fix garbage **vLLM** FP8 KV-cache rollouts and add a startup chat-template check for multi-turn Continuous Token rollouts, which is `strict` by default. Among new issues, users reported **training-correctness** concerns: misaligned V1 rollout-diff metrics, VeOmni R3 router-replay masking, and a Qwen3 XML tool parser that drops tool calls. A community member also posted an AMD/ROCm Q4 roadmap.
 
 Source: [verl-project/verl](https://github.com/verl-project/verl), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-10-27T10:38:53Z through 2026-11-03T10:38:53Z. Issue states reflect collection time.
+Window (UTC): 2026-10-29T23:06:29Z through 2026-11-05T23:06:29Z. Issue states reflect collection time.
 
 ## Key Changes
 
 ### 🔴 High Priority
 
-- **[BREAKING]** NVFP4 QAT switches to per-token activations; FSDP QAT and static SGLang NVFP4 refit removed by *Zhang Shuai (NVIDIA)* [cd04d68](https://github.com/verl-project/verl/commit/cd04d68d6e435e28c60c79b912ba718b494f889f)
+- Add native NVFP4 W4A4 training and rollout with live refit (Megatron/Transformer Engine + vLLM) by *Zhang Shuai (NVIDIA)* [6879e1a](https://github.com/verl-project/verl/commit/6879e1ab07b9cfd0b4b27c31ca4e7afcad1466b3)
 
-    NVFP4 QAT on **Megatron** now uses per-token activations, matching the NVFP4 **rollout** from #7971. `rollout.quantization.moe: NVFP4` always uses them, and `moe_activation` defaults to `nvfp4_per_token`. The PR reports a large drop in training-rollout mismatch on Qwen3-30B-A3B **DAPO**: mean `rollout_corr/k3_kl` went from 0.060 to 0.0033. **Breaking changes to check before upgrading:**
-    1. FSDP QAT is removed (`QATLinear`, `QATQuantizer`, `actor.qat` and the FSDP engine's `qat` config), so QAT now requires the Megatron engine.
-    2. Static NVFP4 refit for **SGLang** is removed, and SGLang does not yet support per-token NVFP4, so **vLLM** is the only supported rollout backend.
-    3. The static per-tensor activation scale is gone, so review any configs or checkpoints that relied on it.
-    4. `nvfp4_qat.md` is merged into `qat.md`.
+    This is an experimental NVFP4 path for routed MoE experts. Enable it with `override_transformer_config` (`fp4: e2m1`, `fp4_recipe: nvfp4`) plus `rollout.quantization.moe=NVFP4`. The author reports about 1.3x faster rollout and about 1.2x shorter steps once responses exceed ~2.5k tokens. It requires Blackwell (SM100), PyTorch 2.13/**CUDA** 13, **vLLM** 0.32.0, TE 2.20.2 and Megatron-Core 0.19.2. It also requires PP=1 and the `naive` **checkpoint** engine. `pyproject.toml`/`uv.lock` change, and **SGLang** is not validated. No **ROCm** support.
 
-    The GPU tests need Blackwell. No ROCm/AMD-specific changes.
+- [BREAKING] NVFP4 QAT switches to per-token activations; FSDP QAT and SGLang static NVFP4 refit removed by *Zhang Shuai (NVIDIA)* [cd04d68](https://github.com/verl-project/verl/commit/cd04d68d6e435e28c60c79b912ba718b494f889f)
 
-- Add native NVFP4 W4A4 training (Megatron/TE) and vLLM rollout with live refit on Blackwell by *Zhang Shuai (NVIDIA)* [6879e1a](https://github.com/verl-project/verl/commit/6879e1ab07b9cfd0b4b27c31ca4e7afcad1466b3)
+    Train/rollout mismatch dropped sharply in the author's Qwen3-30B-A3B **DAPO** run on GB200 (`k3_kl` 0.060 → 0.0033). **Breaking:** `QATLinear`, `QATQuantizer`, `actor.qat` and the **FSDP** engine `qat` config are removed. QAT now requires **Megatron**, and per-token NVFP4 is not supported on **SGLang**. Configs that set the removed keys must be migrated. No **ROCm** impact indicated.
 
-    This is experimental end-to-end NVFP4 for routed MoE experts. **Megatron** trains them via Transformer Engine, the trainer exports NVFP4 weights each update, and **vLLM** **rollout** loads them in place, which preserves **CUDA** graph storage. To enable it, set `override_transformer_config` (`fp4: e2m1`, `fp4_recipe: nvfp4`) and `rollout.quantization.moe=NVFP4` with `moe_activation=nvfp4_per_token`.
+- Add TileLang FP8_BLOCK, MXFP8 and MXFP4 QAT kernels shared with parameter export by *Joel (ByteDance)* [06a3a49](https://github.com/verl-project/verl/commit/06a3a494daa28c912d764ee928bc96e643ec3d56)
 
-    Requirements:
-    - Blackwell (SM100) GPUs.
-    - A pinned stack: PyTorch 2.13/CUDA 13, vLLM 0.32.0, TE 2.20.2 and Megatron-Core 0.19.2. `pyproject.toml` and `uv.lock` are updated.
-    - PP=1, the colocated `naive` **checkpoint** engine and `FULL_DECODE_ONLY` CUDA graphs. SGLang is not validated.
+    Fused TileLang quantize-dequantize kernels now back the ModelOpt fake quantizers and **CUDA** compressed-tensors export, so exported values match QAT numerics. **Megatron** QAT now requires `nvidia-modelopt==0.47.0` and `tilelang==0.1.15`. MXFP8/MXFP4 E8M0 scales now round upward to a power of two, so numerics may differ from the earlier preset. CUDA-only.
 
-    The author reports rollout about 1.3× faster and steps about 1.2× shorter for responses over ~2.5k tokens. Training is still slower than BF16, the score falls below BF16 after ~450 steps, and the **rollout**/train **KL** mismatch is higher. No ROCm/AMD impact.
+- Add grouped TileLang FP8/MXFP8/MXFP4 fake-quantization and expert weight export for Megatron QAT by *Joel (ByteDance)* [e2ace87](https://github.com/verl-project/verl/commit/e2ace870eba5e4cb850e839655f7be524a8fbe54)
 
-- Add TileLang FP8_BLOCK, MXFP8 and MXFP4 kernels for Megatron QAT and parameter export, and upgrade ModelOpt to 0.47.0 by *Joel (ByteDance)* [06a3a49](https://github.com/verl-project/verl/commit/06a3a494daa28c912d764ee928bc96e643ec3d56)
+    Grouped Transformer Engine expert weights are fake-quantized through pointer-table kernels without stacked copies. They are exported in the per-expert layouts that **rollout** engines expect, with **vLLM** `weight_scale_inv` naming. Existing `qat.mode=fp8|mxfp8|mxfp4` settings pick up the new kernels automatically. Expect lower memory use and faster QAT and export for MoE models. NVFP4 QAT users should re-check that path, because its tests were removed in this commit.
 
-    The ModelOpt fake quantizers now use shared TileLang fused quantize-dequantize kernels. The CUDA compressed-tensors export reuses them, so exported values and scales match QAT numerics. MXFP8 and MXFP4 now use DeepSeek-style upward power-of-two E8M0 scale rounding, which may shift QAT results compared with earlier runs. **New dependencies:** `nvidia-modelopt==0.47.0` and `tilelang==0.1.15`. The kernels are CUDA-only, and there is no evidence of **ROCm**/**AMD** support.
+- Reset uncalibrated vLLM KV cache scales after quantized FP8 refit, fixing garbage rollout by *Beichen Huang* [fc726e3](https://github.com/verl-project/verl/commit/fc726e33ceb54ad875d4537880e786de2a32129d)
 
-- Add grouped TileLang fake-quantization and export kernels for FP8/MXFP8/MXFP4 QAT by *Joel (ByteDance)* [e2ace87](https://github.com/verl-project/verl/commit/e2ace870eba5e4cb850e839655f7be524a8fbe54)
+    Combining `FP8_BLOCK` quantized rollout with `kv_cache_dtype=fp8_e4m3` produced garbage generations and NaN `k3_kl`. Uncalibrated q/k/v/prob scales are now reset to 1.0 when the quant config has no `kv_cache_scheme`. Anyone running FP8 **vLLM** rollout with an FP8 KV cache should upgrade. **SGLang** was not checked.
 
-    Megatron QAT with TE grouped expert weights now uses pointer-table kernels, which avoids a stacked weight copy. This should cut memory use and speed up QAT and **rollout** weight export. Fused 3D Megatron-Bridge expert tensors are quantized once and then split per expert. No config changes are needed. Two new requirements: these paths need TileLang and a GPU, and an assertion now enforces that FP8 block scales do not cross expert boundaries. No ROCm/AMD-specific handling.
+- Check Continuous Token merges against the chat template before the first multi-turn rollout, and register `qwen3_next` and `glm4_moe_lite` builders by *khazzz1c (OpenRLHF)* [31cfccb](https://github.com/verl-project/verl/commit/31cfccb4dbad8f1f4aa41a34eb589afbe283e8fe)
 
-- Reset uncalibrated FP8 KV cache scales after quantized vLLM refit, fixing garbage rollouts by *Beichen Huang* [fc726e3](https://github.com/verl-project/verl/commit/fc726e33ceb54ad875d4537880e786de2a32129d)
+    `tokenization_sanity_check_mode` had no effect since #4422 and is now enforced again. **Upgrade note:** under the default `strict` mode, **multi-turn**/**agent loop** runs on models that fall back to the default builder (e.g. SmolLM, Granite, OLMo-2) now **raise** before the first **rollout**. Fix this by registering a builder, or set `ignore_strippable`/`disable`. Qwen3-Next and GLM-4.7-Flash now get correct turn boundaries, a **training-correctness** fix. Custom context-merging loops should set `merges_context_messages = True`.
 
-    This fixes a **rollout** correctness bug. With `FP8_BLOCK` quantization plus `kv_cache_dtype=fp8_e4m3`, **vLLM** attention scales were left at dummy values. That produced garbage output and NaN `k3_kl`. The new `reset_uncalibrated_kv_cache_scales` sets them to 1.0 after each refit when the quant config has no `kv_cache_scheme`. In the reported Qwen3-30B-A3B run, results went from NaN `k3_kl` and 0.0 AIME24 to 0.0066 `k3_kl` and 4.6% AIME24. Users running FP8 rollout with an FP8 KV cache should upgrade. SGLang was not checked.
+- Optimize Qwen3.5 FSDP-Turbo training with fused kernels and Turbo model overrides by *pengnuoheng* [184687b](https://github.com/verl-project/verl/commit/184687bb3b7c601627eed3660283ecabd2bb75ed)
 
-- Make the DeepSeek-V4 VeOmni GRPO recipe run on AMD ROCm: skip the DeepGEMM default, keep the checkpoint weight layout, and set a default `OMP_NUM_THREADS` by *xiaohong* [6d04f39](https://github.com/verl-project/verl/commit/6d04f398f1d5dc11d09fc1fc92368608d26e3538)
-
-    This fixes **vLLM** FP8 **rollout** failures on **ROCm** that started after #8308 made `deep_gemm` the default. It also stops silent weight corruption after rollout weight syncs for DeepSeek-V4 with AITER. **ROCm impact:** `VLLM_ROCM_DSV4_BPRESHUFFLE` now defaults to 0. With AITER on gfx94x, the recipe exits if vLLM lacks support for `VLLM_ROCM_DSV4_BPRESHUFFLE`. **Upgrade note for all backends:** `get_ppo_ray_runtime_env` now defaults `OMP_NUM_THREADS` to physical cores divided by GPUs per node when it is not already set. This can change host-side **performance**.
-
-- Support the trainer-side rollout weight quantizer in the VeOmni engine, and reject unsupported quantization combinations at init by *xiaohong* [6f3f449](https://github.com/verl-project/verl/commit/6f3f449e113b7eb84eef8c0912aad33ffdd322cd)
-
-    This fixes a `NotImplementedError` at `init_model` for VeOmni runs on FP8-quantized checkpoints (a regression since #8287). Saved **checkpoints** stay unquantized. **Upgrade note:** two combinations now fail at init on both the **FSDP** and **Megatron** engines:
-    - a `rollout.quantization` override on DeepSeek-V4;
-    - `checkpoint_engine.backend='delta_sharded'` with a quantized rollout.
-
-    **ROCm impact:** the PR reports consistent rollout and trainer token probabilities across two-node runs on **AMD** gfx942 and gfx950.
-
-- Fix FSDP-Turbo stability and fused MoE weight transposition for DeepSeek-V4-Flash on NPU (**vLLM**-Ascend, **FSDP**) by *zhouhengan1211* [a08ea02](https://github.com/verl-project/verl/commit/a08ea02a784d7d4982b1d81df36d188a476192bb)
-
-    This fixes a **training correctness** bug on NPU: when the fused `w13_weight` had equal last dimensions, it was transposed twice, causing a training/inference mismatch. The commit also fixes DeepSeek-V4 weight-name conversion for **rollout** sync, duplicate outputs under TP/Ulysses, and `no_sync` interfering with FSDP-Turbo's backward communication. It adds a DeepSeek-V4-Flash **GRPO** example. This only affects Ascend NPU, with no ROCm/AMD implication.
-
-- Fix nested position-ID packing so the token axis is preserved for equal-length mRoPE batches by *yue zeng (UNSW)* [59f9a42](https://github.com/verl-project/verl/commit/59f9a42c749a49793ee38298f3081beab43d79bc)
-
-    `left_right_2_no_padding()` now passes an explicit `jagged_dim`. This fixes a `split_with_sizes` crash in actor minibatch selection during **GRPO** on the no-padding path. The crash was reported with Qwen3.5-4B on Ascend. No config changes are needed, and the fix is backend-agnostic PyTorch.
+    `fsdp_turbo` now loads Turbo's optimized model class and enables fused causal-conv1d and gated-delta-net kernels. It also CPU-offloads forward-only workers such as the reference model. EP config changes: the dispatcher is now `all2all`, and `apply_efsdp_modules`/`use_fused_ops` are new options. Example scripts now require `transformers==5.21.0` and `vllm==0.30.0`. Turbo backend users must migrate their configs and dependencies.
 
 ### 🟡 Medium Priority
 
-- Release vLLM rollout submission-gate barrier once a request reaches the engine, not on its first token by *Shawn Lu (googlers)* [081c76b](https://github.com/verl-project/verl/commit/081c76bba2a92bcff3032c2f5e4758bdbe687b37)
+- Decouple checkpoint publish from rollout commit in `CheckpointEngineManager` with an opt-in `support_publish_weights` mode by *Joel (ByteDance)* [08f0b49](https://github.com/verl-project/verl/commit/08f0b49e171ae6f59187e0907cd448eb73d66dac)
 
-    `abort_all_requests()` no longer waits for every **vLLM** request to be prefilled before pausing. The PR reports this removes 5–14 s of pause per weight sync when the batch exceeds `max_num_seqs`. This should lower weight-sync latency in **async** **rollout** and **agent** workflows. No config changes are needed. It relies on `AsyncLLM.add_request(..., data_parallel_rank=...)`, which the PR says exists in vLLM 0.18–0.32.
+    The default (`False`) keeps the coupled NCCL/NIXL behavior. With `True`, the trainer returns once a weight snapshot is published, and the rollout commit continues in the background. This is groundwork for the **async** decoupled trainer (#8526). No config or **checkpoint** changes for existing backends.
 
-- VeOmni engine honors `optim.override_optimizer_config` (fused AdamW under FSDP2 CPU offload) and makes checkpoint loading configurable by *xiaohong* [b65da71](https://github.com/verl-project/verl/commit/b65da71c1745b49e80adc218d02782a3df73d047)
+- Make separate-async trainer wait for background weight update before validation and at train end by *Shawn Lu (Google)* [b151d44](https://github.com/verl-project/verl/commit/b151d444f4a7ebd9ed54cdbf0242ff572b9d7424)
 
-    With `enable_fsdp_offload=true`, `fused` now defaults to `true`. This avoids a host-memory temporary the size of the local fp32 parameters, which had triggered **Ray** OOM in the DeepSeek-V4 recipe. Set `override_optimizer_config.fused=false` to opt out. Two new **checkpoint** loading fields, `broadcast_model_weights_from_rank0` and `ep_sharded_stream_load`, default to the old behavior. Reported on **AMD** gfx942/gfx950 for this recipe only.
+    The new `wait_for_weight_update()` stops **async** validation from generating with stale weights when `support_publish_weights=True`. Coupled backends are unaffected. The author reports `update_weights` time dropping from 2.06 s to 0.66 s per step on a TPU backend.
 
-- Request `values` from TransferQueue only when critic is enabled, fixing GRPO failures by *renjunying2 (Huawei)* [3fdf2b5](https://github.com/verl-project/verl/commit/3fdf2b548882a8aeccf0842c2150d9c9f1790a55)
+- Request `values` from TransferQueue only when the critic is enabled in the PPO v1 trainer by *renjunying2 (Huawei)* [3fdf2b5](https://github.com/verl-project/verl/commit/3fdf2b548882a8aeccf0842c2150d9c9f1790a55)
 
-    This fixes **GRPO** and other critic-free runs on the v1 trainer, which failed with newer TransferQueue versions. Critic-enabled **PPO** behavior is unchanged.
+    Fixes critic-free **GRPO** failures on the v1 trainer with newer TransferQueue versions, which reject requests for missing fields. Behavior with the critic enabled is unchanged.
 
-- Run `on_train_end()` on the last step of v1 `fit()` and shut down train dataloader workers by *0z5a (University of Tübingen)* [1186e32](https://github.com/verl-project/verl/commit/1186e32f6ec81da21bd827f1178d39227f6b5441)
+- Run `on_train_end()` on the last step and stop train dataloader workers at the end of v1 trainer `fit()` by *0z5a (University of Tübingen)* [1186e32](https://github.com/verl-project/verl/commit/1186e32f6ec81da21bd827f1178d39227f6b5441)
 
-    `on_train_end()` now fires on every exit path, so custom overrides will now run at the final step. The stray "DataLoader worker killed by signal" traceback at the end of a run is also gone. Training correctness and **checkpoints** are unaffected.
+    `on_train_end()` and the dump executor shutdown now run on every exit path, so custom overrides of `on_train_end()` will now be called. This also removes the spurious "DataLoader worker killed by signal" traceback after successful runs. Only a CPU test covers the change.
 
-- Keep first NonTensorData in `concat_tensordict` with tensordict >= 0.11 by *Jialei Chen (Google)* [8e48d72](https://github.com/verl-project/verl/commit/8e48d72de4766228c36623c90f9f5c49ee5b45f3)
+- Keep the first NonTensorData in `concat_tensordict` with tensordict >= 0.11 by *Jialei Chen (Google)* [8e48d72](https://github.com/verl-project/verl/commit/8e48d72de4766228c36623c90f9f5c49ee5b45f3)
 
-    This fixes a `sft_trainer_ray` validation crash and list-valued **Ray** trainer metrics, including `mfu`, on newer tensordict versions such as 0.15.1 in the TPU image. There is no change with verl's pinned tensordict (≤ 0.10).
+    Fixes `sft_trainer_ray` validation `TypeError`s and broken `compute_log_prob` metrics on newer tensordict versions. There is no change for the pinned tensordict <= 0.10.
 
-- Add Qwen3.5 (incl. 35B-A3B MoE) GRPO recipe for TPU v7x, with context-parallel and fused-QKV options by *Jialei Chen (Google)* [2ab3529](https://github.com/verl-project/verl/commit/2ab35292039a51175a4b3d3b3b2d76e951a0d3e4)
+- Add Qwen3.5-397B-A17B full-parameter GRPO recipe on TPU v7x with multi-replica rollout and TPU FLOPS accounting by *Jialei Chen (Google)* [592cba1](https://github.com/verl-project/verl/commit/592cba13531a32b69eccd490a04b795a89587854)
 
-    This adds a TPU **GRPO** recipe with **vLLM** **rollout**. **Migration:** the TorchTitan TPU options move under `engine_kwargs.tpu.*`, so custom overrides of `torchtitan.use_splash_attention`, `tpu_eager_mode` or `use_simple_fsdp` must be updated. The TPU Dockerfile bumps vLLM to v0.32.0 and transformers to >=5.18,<5.20. No ROCm impact.
+    The recipe adds opt-in large-MoE **GRPO** knobs (EP, fp32 master weights, host-offloaded optimizer). The TPU image pins a newer torchtitan, `jax` 0.12.0.1 and `tokamax` 0.0.17. `perf/mfu/actor` is now reported on TPU v5e/v5p/v6e/v7x. The author reports ~130 s/step and 3.8% MFU on 64 v7x chips.
 
-- Add multi-stage Intel GPU (XPU) Docker image for vLLM 0.32.0 rollout and FSDP/FSDP2 training by *kahlun (Intel)* [321e4e4](https://github.com/verl-project/verl/commit/321e4e450fcfc47a3491c946cd01dacd9ea7281a)
+- Add DeepSeek-V4-Pro GRPO example (H100 and GB200 profiles) and scale-up docs by *linmuchuiyang* [7cea539](https://github.com/verl-project/verl/commit/7cea5392165ac26d5eadf879701337c85e4a2b2f)
 
-    This adds a new `docker/xpu/Dockerfile.stable.vllm` for Intel Arc Pro B-series GPUs, with torch 2.14.0+xpu and oneCCL. It requires a verl checkout that allows transformers >= 5.16.1, plus compute-runtime >= 26.18. It was tested by hand only and has no CI coverage. CUDA and ROCm users are unaffected.
+    Adds a ~1.6T **GRPO** example using **Megatron** training and **vLLM** rollout. It needs `main` with #8234/#8235 and a patched Megatron-LM branch. Checkpoints default to `save_contents=[model,extra]` because the optimizer state is ~22 TB. The rollout MoE kernel is forced to Marlin. NVIDIA-only.
 
-- Upgrade Ascend 950 images to **Megatron**-Core 0.18 and add Qwen3-30B-A3B MXFP8 **GRPO** example by *XiangRun Liu* [6dcc6e4](https://github.com/verl-project/verl/commit/6dcc6e4d10ba3b10cd7f659ba89189acabcb55be)
+- Upgrade Ascend (NPU) vLLM/vLLM-Ascend stack to 0.30.0 in Dockerfiles, install script and docs by *renjunying2 (Huawei)* [f7722fe](https://github.com/verl-project/verl/commit/f7722fef34492b973469167927d76127932a7dff)
 
-    The Ascend 950 CANN 9.1.0 image moves from Megatron-LM core_v0.12.0 to core_v0.18.0 and MindSpeed to core_r0.18.0, and it adds Megatron-Bridge v0.5.0 and related packages. Users of this image need to rebuild it. The commit also adds an 8-NPU MXFP8 example with quantized **vLLM** **rollout**.
+    The A2/A3/A5 images now use **vLLM**/vLLM-Ascend 0.30.0, `torch_npu==2.10.0.post7` and `transformers==5.14.1`, and the MindSpeed install order changed. Ascend users must rebuild and revalidate their images.
 
-- Fix Qwen3.5-35B FSDPTurbo GRPO example for NPU by using the `all2all` dispatcher and setting `use_fused_ops` separately for actor and ref by *renjunying2 (Huawei)* [4d3ed12](https://github.com/verl-project/verl/commit/4d3ed12a7617c6b78ee0ac8f27dd7848bb0d11ee)
+- Avoid duplicate Qwen3-ASR registration and add FLA NPU backend in Ascend Docker images by *renjunying2 (Huawei)* [e41dd69](https://github.com/verl-project/verl/commit/e41dd697abd7d5a583c0b46b1cedb821ba402db3)
 
-    FSDPTurbo no longer supports the `fused` dispatcher. Custom **FSDP** **GRPO** scripts that copied the old values need `ep_plan.dispatcher=all2all` and `ep_plan.use_fused_ops` set separately for the actor and ref models. Only the example script changed.
+    Patches Megatron-Bridge's Qwen3-ASR registration and installs `flash-linear-attention-npu`, which **vLLM**-Ascend needs. Rebuild Ascend images or rerun the install script to pick these up.
+
+- Upgrade Ascend 950 Docker image to Megatron-Core 0.18 and add Qwen3-30B-A3B MXFP8 GRPO example by *XiangRun Liu* [6dcc6e4](https://github.com/verl-project/verl/commit/6dcc6e4d10ba3b10cd7f659ba89189acabcb55be)
+
+    The Ascend 950 image moves from **Megatron** core 0.12 to 0.18, plus the matching MindSpeed/Bridge stack. The commit adds an 8-NPU MXFP8 **GRPO** example, which is verified only at pinned commit 18eb23d and is committed without a `.sh` extension. Ascend 950 users must rebuild their images.
+
+- Add multi-stage Intel GPU (XPU) Docker image for vLLM 0.32.0 with FSDP/FSDP2 by *kahlun (Intel)* [321e4e4](https://github.com/verl-project/verl/commit/321e4e450fcfc47a3491c946cd01dacd9ea7281a)
+
+    New image for Intel Arc Pro B-series GPUs. It requires transformers >= 5.16.1 (`main` since #8390) and compute-runtime 26.18 or later. It was tested by hand only, with no CI coverage.
 
 ### 🟢 Low Priority
 
+- Make tests device-agnostic using `verl.utils.device` platform helpers instead of hardcoded `cuda` by *kahlun (Intel)* [2bcc98a](https://github.com/verl-project/verl/commit/2bcc98a9b64bdb3af5b88ac870ba0709ed709aef)
+
+    Test-only change across 12 files. Behavior on **CUDA** is unchanged, and the tests are easier to run on other accelerators.
+
 - Add H20 FP8 KV cache results and usage notes to the FP8 guide by *Beichen Huang* [0938fcb](https://github.com/verl-project/verl/commit/0938fcb3190bc8eca3091f77aead3cd44c4d8869)
 
-    Docs only. The guide documents `kv_cache_dtype=fp8_e4m3` for **vLLM** **rollout**. Combining it with `FP8_BLOCK` requires the fix in [fc726e3](https://github.com/verl-project/verl/commit/fc726e33ceb54ad875d4537880e786de2a32129d). The reported H20 runs show roughly BF16 accuracy with about 10% lower step time.
+    Docs only. On H20, the FP8 KV cache cut rollout time by ~13% but roughly doubled `k3_kl`. With FP8_BLOCK rollout it needs the scale reset fix in [fc726e3](https://github.com/verl-project/verl/commit/fc726e33ceb54ad875d4537880e786de2a32129d).
 
-- Make tests device-agnostic by replacing hardcoded `cuda` with `verl.utils.device` helpers by *kahlun (Intel)* [2bcc98a](https://github.com/verl-project/verl/commit/2bcc98a9b64bdb3af5b88ac870ba0709ed709aef)
+- Ascend NPU CI maintenance by *lxb007981*: [fc724ff](https://github.com/verl-project/verl/commit/fc724ff75126e2f80ee258eedb33ef4d48a845ec) [cb94d6c](https://github.com/verl-project/verl/commit/cb94d6c4b5157fbf728295363c1332586a9da754) [464a91a](https://github.com/verl-project/verl/commit/464a91a6eadc8e8595ea73c8c8688e109ac33a4e) [07ba1a8](https://github.com/verl-project/verl/commit/07ba1a854e57356ccf1c9d604898607a88e3da3e) [d4bf40c](https://github.com/verl-project/verl/commit/d4bf40cf5fe43ef25fdf634efbd43ad90b08c5ff) [3902420](https://github.com/verl-project/verl/commit/39024209cc412e363a66338429d4644416de0abb) [7454326](https://github.com/verl-project/verl/commit/745432653d15af14954af1e055c8aeed72afa064)
 
-    Test-only change across 12 files. These tests can now run on non-CUDA accelerators, and CUDA behavior is unchanged.
-
-- Enable daily Ascend A5 Docker image builds in CI by *lxb007981* [3902420](https://github.com/verl-project/verl/commit/39024209cc412e363a66338429d4644416de0abb)
-
-    CI only. A5 images are now built daily, like A3.
+    CI-only changes with no runtime impact:
+    - The Qwen3-8B **PPO** nightly now runs on 16 NPUs to avoid host OOM.
+    - The multinode nightly creates its log directory and gains a GLM5.2 **GRPO** baseline regression check.
+    - Ascend workflows print `/proc/meminfo` before tests.
+    - Engine tests use tiny Qwen3 configs.
+    - Ascend A5 images are now built daily.
+    - The nightly Ascend workflow no longer runs on pull requests.
 
 - Use "Huawei Ascend" in README hardware support and Ascend Docker description by *XiangRun Liu* [8df5bae](https://github.com/verl-project/verl/commit/8df5baeed0f5ecdd7f870d83bc3d79194816e2a9)
 
-    Documentation wording only. No runtime impact.
+    Documentation wording only.
 
 ## Newly Submitted Issues
 
-**Reported training/algorithm correctness concerns** (user-reported, not confirmed by maintainers):
+**Rollout, agent loops and tools**
+- [#8462](https://github.com/verl-project/verl/issues/8462) (closed): The reporter found that Continuous Token merges were never checked against the chat template during training, and that `tokenization_sanity_check_mode` had no effect since #4422. As a result, unregistered models such as GLM-4.7-Flash and Qwen3-Next could silently train on wrong turn boundaries (duplicated `<|observation|>`, dropped `\n`). Commit [31cfccb](https://github.com/verl-project/verl/commit/31cfccb4dbad8f1f4aa41a34eb589afbe283e8fe) in this window implements the proposed startup check.
+- [#8478](https://github.com/verl-project/verl/issues/8478) (closed): `ToolAgentLoop` reportedly returns the whole prompt as the response when the first turn generates no tokens, for example on an aborted request. Prompt tokens would then be scored as response text and counted in length metrics. The reporter offered a one-line fix.
+- [#8550](https://github.com/verl-project/verl/issues/8550) (closed), [#8559](https://github.com/verl-project/verl/issues/8559) (open): Two duplicate reports. The Qwen3 XML tool parser raises `TypeError` when a parameter value is literally `...`, because `ast.literal_eval` returns `Ellipsis`. The tool call is then dropped for that turn; the reporter saw this 2 times in 38 training steps.
+- [#8488](https://github.com/verl-project/verl/issues/8488) (closed): The VeOmni R3 router replay reportedly infers padding rows from duplicate top-k values instead of an explicit mask. As described, valid duplicate rows would silently lose replay fidelity, and topk=1 models would replay padding as expert 0. The reporter proposed a `routed_experts_mask`.
 
-- [#8406](https://github.com/verl-project/verl/issues/8406) (open): `geo_mean` (GMPO) policy loss reportedly ignores IcePop's zero IS weights. A rejected token keeps its gradient, and the rest of the sequence is down-scaled by `exp(log(1e-10)/L)`, about ×0.24 at L=16. The reporter has a CPU reproduction showing the effect on gradients. Short responses with **rollout correction** / **importance sampling** enabled would be most affected.
-- [#8423](https://github.com/verl-project/verl/issues/8423) (open): The reporter argues that **distillation** with `loss_mode=k3`/`low_var_kl` and `use_policy_gradient=True` does not follow the reverse-**KL** gradient, because it detaches the k3 reward. They show a two-action example where an on-policy update increases the true reverse KL, and they ask maintainers whether k3 + PG is an intended objective.
-- [#8462](https://github.com/verl-project/verl/issues/8462) (open): Continuous Token **multi-turn** merges are reportedly never checked against the chat template during training. The default builder used for unregistered `model_type`s (e.g. GLM-4.7-Flash, Qwen3-Next) reportedly duplicates `<|observation|>` or drops the `\n` after `<|im_end|>`. The reporter also says `tokenization_sanity_check_mode` has done nothing since #4422. A runtime check is proposed.
-- [#8504](https://github.com/verl-project/verl/issues/8504) (open): The V1 `MetricsAggregator` reportedly misaligns `rollout_probs_diff_mean` and `rollout_probs_diff_valid` when `parameter_sync_step > 1`. Placeholder NaNs from empty steps contaminate the mean, which makes the logged rollout/training mismatch metrics misleading.
-- [#8433](https://github.com/verl-project/verl/issues/8433) (open): When SFT resumes from a **checkpoint**, the `StatefulDataLoader` is built without a generator, so it consumes the restored global CPU RNG. The resumed RNG state then differs silently from an uninterrupted run. Batch order is unaffected.
-- [#8449](https://github.com/verl-project/verl/issues/8449) (open): The `math_dapo` **reward** scorer gives -1.0 to correct Minerva-style answers wrapped in markdown emphasis (e.g. `**Answer:** 42`). This could under-reward correct responses during RL.
+**Training and algorithms**
+- [#8504](https://github.com/verl-project/verl/issues/8504) (open): V1 `MetricsAggregator` reportedly aggregates `rollout_probs_diff_mean` and `_valid` inconsistently when `parameter_sync_step > 1`. Placeholder NaNs from empty steps contaminate the mean, and real NaNs can be hidden. The reporter reproduced this on CPU, which would make the logged metrics misleading.
+- [#8536](https://github.com/verl-project/verl/issues/8536) (open): RFC for a `kl_loss_type: topk_rb` estimator: a top-k Rao-Blackwellised **KL** to the reference with a sampled tail correction, unbiased and with lower variance than `k3`/`low_var_kl`. It would later fill the `full` stub. Results so far come only from toy experiments; the author proposes a PR sequence.
+- [#8475](https://github.com/verl-project/verl/issues/8475) (open): Asks why **Megatron** disables fused `linear_cross_entropy` whenever `mtp.enable` is set, even for inference-only MTP (`enable_train=False`). The reporter argues this is an integration gap and links a PR that relaxes only that case. The PR has no end-to-end validation yet.
+- [#8549](https://github.com/verl-project/verl/issues/8549) (open): Question and offer to contribute Muon optimizer support for the native **FSDP2** backend.
+- [#8567](https://github.com/verl-project/verl/issues/8567) (open): The `compute_policy_loss_vanilla` docstring documents `rollout_log_probs`, but the function takes `rollout_is_weights`, which are importance ratios rather than log-probs. The reporter lists three more stale docstrings and offers a doc-only PR.
 
-**Rollout and agent workflow reports:**
+**Data**
+- [#8552](https://github.com/verl-project/verl/issues/8552) (closed): The overlong-prompt filter reportedly re-tokenizes the whole dataset on every launch, taking 13–16 minutes for ~33k rows. The cause given is that the `datasets` cache fingerprint depends on a closure that is not stable across processes. The reporter proposed an explicit `new_fingerprint`.
+- [#8554](https://github.com/verl-project/verl/issues/8554) (closed): `RLHFDataset` reportedly does not resolve a relative `tool_config_path`, unlike `AgentLoopWorker`. In Ray actors with a different working directory, tool schemas would be missing, so the overlong-prompt filter would underestimate prompt lengths.
 
-- [#8478](https://github.com/verl-project/verl/issues/8478) (closed, completed): `ToolAgentLoop` reportedly returns the prompt as the response when the first turn generates no tokens, for example after an aborted request. The prompt tokens then get scored as response text. The closed state does not confirm that a fix was merged into `main`.
-- [#8488](https://github.com/verl-project/verl/issues/8488) (closed, not planned): VeOmni R3 router replay infers padding rows from duplicate top-k values instead of an explicit mask. The report says valid duplicate rows are misclassified and topk=1 padding rows replay as expert 0.
-
-**Feature requests and RFCs:**
-
-- [#8410](https://github.com/verl-project/verl/issues/8410) (open): Proposal to mark individual placement-group slots unavailable in `RayResourcePool`, so unhealthy GPUs can be excluded during recovery without discarding the whole PG.
-- [#8452](https://github.com/verl-project/verl/issues/8452) (open): RFC for a pluggable `data.custom_dataloader` hook for V1 PPO, to support streaming or table-backed pipelines and unsized streams.
-- [#8475](https://github.com/verl-project/verl/issues/8475) (open): Request to allow fused `linear_cross_entropy` in **Megatron** when MTP is used only for rollout speculative decoding (`enable_train=False`). Currently `mtp.enable` disables fused kernels, which may cost memory and throughput.
-- [#8447](https://github.com/verl-project/verl/issues/8447) (open): `setup.py` extras (`gpu`, `geo`, `prime`, `trl`, `mcore`, `trtllm`) are dropped because `pyproject.toml` takes precedence. As a result, `pip install -e ".[trtllm]"`, which the TensorRT-LLM docs still recommend, installs nothing extra.
+**Platform roadmap**
+- [#8537](https://github.com/verl-project/verl/issues/8537) (open): **AMD**/**ROCm** roadmap for 26Q4. Planned items include CI and Docker updates, QAT and MXFP8/MXFP4 recipes on MI300X/MI355X, and DeepSeek-V4-Flash **GRPO**. It also lists JAX/Primus backends, agentic RL recipes and a MoRI-IO checkpoint engine. These are plans, not shipped changes.
 
 ## Stats
-- **Total Commits**: 22
-- **Analyzed Commits**: 22 (all commits analyzed)
+- **Total Commits**: 28
+- **Analyzed Commits**: 28
 - **Active Contributors**: 13
-- **Files Changed**: 115 unique files (154 file changes across commits)
-- **Training-Specific Commits**: 9 (40.9% of total)
-- **New Issues**: 12 (10 open, 2 closed at collection time)
+- **Files Changed**: 194 file changes across 28 commits (some files touched by several commits)
+- **Training-Specific Commits**: 7 (25% of total)
+- **New Issues**: 13 (7 open, 6 closed at collection time)
 
 ---
 *Generated by [Claude Code](https://claude.ai/code). Verify key conclusions against the linked commits and issues.*
