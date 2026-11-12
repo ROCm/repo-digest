@@ -1,38 +1,30 @@
-# vime Weekly Digest - 2026-11-05
+# vime Weekly Digest - 2026-11-12
 
 ## Summary
-A large `[Sync]` commit reworks **checkpoint** recovery (rewind replaces fork), adds GLM5-Next and Qwen3.5 native-weight conversion, and overhauls the `docker/patch/latest` **vLLM** patch stack (Rust frontend patches removed, router PD registration and unified PD metrics/**tracing** added). A separate fix pins the **ROCm** image by digest and applies the shared vLLM patches with strict `git apply`. Among new issues, one user reports that colocated online **DSpark** draft training never updates the draft weights. Maintainers have not confirmed this, and the proposed fix is not on `main`.
+A large `[Sync]` commit moves the **Megatron** pin to a 0.20-compatible revision, adds Nemotron Super VL training support, and touches **checkpoint**, recovery and **weight sync** code. Two **ROCm**/**AMD** fixes repair TP1 colocated IPC **weight sync** and **NIXL** rollout transport, and make `--offload-train` release VRAM. Among new issues, one user reports slow `SampleCodec.prepare` encoding for long id lists. A second describes **GDN** and Qwen3.6-35B-A3B work on Ascend NPU, which lives on the `ascend` branch and is not in `main`.
 
 Source: [vllm-project/vime](https://github.com/vllm-project/vime), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-10-29T23:04:44Z through 2026-11-05T23:04:44Z. Issue states reflect collection time.
+Window (UTC): 2026-11-05T23:05:30Z through 2026-11-12T23:05:30Z. Issue states reflect collection time.
 
 ## Key Changes
 
 ### 🔴 High Priority
 
-- [Sync] **Checkpoint** rewind, new model conversions, and Megatron training-path updates by *aoshen02 (Inferact)* [6845501](https://github.com/vllm-project/vime/commit/6845501aed4be6497213292dbebb16ceb5565954)
+- [Sync] Update **Megatron** pin for 0.20 compatibility and add Nemotron Super VL training support by *aoshen02 (Inferact)* [2ce39aa](https://github.com/vllm-project/vime/commit/2ce39aa2cb380fa36d4df8c11d15270c212ee453)
 
-    Adds `vime/data/rewind.py` and replaces the straw **checkpoint** fork test with a rewind test. It adds GLM5-Next and Qwen3.5 native-weight conversion, and changes the **Megatron** loss, actor, **weight sync** and `ppo_utils` paths. Before upgrading, re-check Megatron **checkpoint** recovery and **rollout** staleness behavior.
+    **Dependency/image migration:** **Megatron** is now pinned to `ae76c60`, and `megatron.patch` was rebased onto it. The commit also adds `nvidia-resiliency-ext==0.7.0` for async **checkpoint** support and builds `mamba_ssm`/`causal-conv1d` in the Docker image. **Model support:** it adds Nemotron-H and Nemotron-H VL HF↔Megatron converters, model scripts and plugins. Two new **vLLM** patches handle native weight reload (`vllm-nemotron-reload`) and multimodal placeholder masking (`vllm-tito-placeholder-mask`). **Upgrade note:** the sync also changes `update_weight/common.py`, `training_recovery.py`, `checkpoint.py` and `data.py`. Rebuild your images and re-check checkpoint loading, **weight sync** and recovery before upgrading. New tests cover packed weight transfer, **stateless Adam** and the **R3** conversion checkpoint, and an 8-GPU Nemotron 3.5 Super VL e2e CI suite was added. The diff has no ROCm/AMD-specific changes.
 
-- [Sync] **vLLM** patch stack, PD/Mooncake, and serving/runtime rework by *aoshen02 (Inferact)* [6845501](https://github.com/vllm-project/vime/commit/6845501aed4be6497213292dbebb16ceb5565954)
+- Fix TP1 colocate IPC **weight sync**, **NIXL** rollout transport, and offload-train VRAM release on **ROCm** by *Jinn (RLsys-Foundation)* [8707a5a](https://github.com/vllm-project/vime/commit/8707a5a7156223ce1d92c65279e2eed748addb82)
 
-    The `docker/patch/latest` stack drops the Rust frontend patches and adds C++20 FA2, DeepGEMM BF16 rejection, router PD registration, and unified PD metrics and **tracing**. It also changes the vLLM serving, runtime, **disaggregation**, Mooncake and **fully async rollout** paths. Rebuild Docker images and re-check serving configuration. The commit message says full CI, ARM and the paired PD quality experiment were still pending or failing at sync time.
-
-- [Sync] **ROCm** Dockerfile and CI changes by *aoshen02 (Inferact)* [6845501](https://github.com/vllm-project/vime/commit/6845501aed4be6497213292dbebb16ceb5565954)
-
-    `docker/Dockerfile.rocm` changed and `docker/amd_patch/latest/vllm-inflight-queue-diagnostics.patch` was removed, so **AMD** image builds should be re-validated. CI adds Mooncake RDMA tests and lets you select exact tests through `VIME_CI_TESTS`.
+    The **ROCm** image is now pinned by digest and uses the shared **vLLM** patches. A new AMD-only vLLM patch opens one HIP IPC handle before VMM allocations, so TP1 colocated engines no longer stall on their first IPC **weight sync**. A `nixl` → `nixl_rocm` alias makes `--rollout-data-transport nixl` work. Before this fix, that option crashed the RolloutManager with SIGSEGV. **AMD impact:** MI355X users should rebuild the ROCm image. This commit and [bf7f7ac](https://github.com/vllm-project/vime/commit/bf7f7ac6108288fccaf0f9f9702bbc913879f2c4) below are related; together they make `--offload-train` free VRAM (64 of 64 GiB in the author's test).
 
 ### 🟡 Medium Priority
 
-- Pin the **ROCm** base image by digest and apply the shared **vLLM** patches in the ROCm Dockerfile by *Jinn (RLsys-Foundation)* [720d223](https://github.com/vllm-project/vime/commit/720d223ad79b47ed233ce4a74d9cb952db9ec1c2)
+- Make `--offload-train` work on **ROCm**: pin torch_memory_saver 118b09b3 and enable offload in the **AMD** Qwen3-8B example by *Jinn (RLsys-Foundation)* [bf7f7ac](https://github.com/vllm-project/vime/commit/bf7f7ac6108288fccaf0f9f9702bbc913879f2c4)
 
-    `Dockerfile.rocm` now uses a ROCm 10 nightly pinned by digest, at the same vLLM commit as `docker/Dockerfile`, instead of the floating `nightly` tag. It applies the ten shared `docker/patch/latest/` patches with strict `git apply`, and the fuzz-applied **AMD** patch copies are deleted. This should fix the broken ROCm build and gives gfx950 (MI350X/MI355X) users a reproducible image. Anyone who bumps the shared patches or `VLLM_COMMIT` must now keep `BASE_IMAGE` compatible. The commit message says ROCm 10 is needed because on ROCm 7.2 a `torch_memory_saver` pause frees no VRAM.
-
-- Follow-up bundle: MemAgent parent-rollout grouping fix, vLLM engine contract tightening, `straw-queue==0.1.6` pin by *aoshen02 (Inferact)* [7a9a81e](https://github.com/vllm-project/vime/commit/7a9a81ea9829eac96e8f0d3b2c2758cf39fcff4f)
-
-    MemAgent `custom_convert` no longer trims expanded samples to `global_batch_size`. It now aggregates loss-mask denominators per parent **rollout**, which changes training-loss consistency for MemAgent users. `VLLMEngine.check_weights` now raises `NotImplementedError`. External **vLLM** setups should confirm they expose the `reload_weights` and `pull_weights` RPCs over `/collective_rpc`. `straw-queue` is pinned to `==0.1.6` in the Docker image and in CI. The release preflight now checks Docker patch coverage and requires an immutable base-image digest.
+    The commit bumps `TMS_COMMIT` in `docker/Dockerfile.rocm` to a torch_memory_saver that rounds HIP VMM sizes to the allocation granularity. Freeing a paused block no longer fails in cuMemUnmap, and `.item()` on offloaded tensors no longer faults. `scripts/run-qwen3-8B-amd.sh` drops `--no-offload-train` and now passes `--train-env-vars '{"NCCL_CUMEM_ENABLE":"1"}'`. Without that variable, RCCL P2P collectives return empty data under offload. **Migration:** if you run `--offload-train` on ROCm, rebuild the image and set `NCCL_CUMEM_ENABLE=1` for the train workers.
 
 ### 🟢 Low Priority
 
@@ -40,21 +32,22 @@ None
 
 ## Newly Submitted Issues
 
-- [#509](https://github.com/vllm-project/vime/issues/509) (open): **[Bug][Training]** A user reports that in colocated runs (`--colocate`), online **DSpark** draft training never changes the draft. `Actor.update_weights()` swaps each draft parameter's storage, which detaches it from the distributed-optimizer buffer, so the optimizer steps but the draft keeps its pretrained values. The loss curve does not reveal this. The reporter shows 0 changed elements per step on GH200/Qwen3-4B. A proposed fix exists in #484, which targets another branch and is not on `main`. Maintainers have not confirmed the bug.
-- [#508](https://github.com/vllm-project/vime/issues/508) (open): **[Perf]** A user proposes defaulting `--vllm-watermark` to 0.05 for rollouts. Under KV-cache pressure, hybrid models such as Qwen3.5 and Qwen3-Next repeatedly re-preempt requests. The reporter measured up to 17% faster GRPO rollout steps and about 10× fewer preemptions on Qwen3.5-4B. These are single-run, user-reported numbers. The shipped recipes are said to be unaffected unless the batch is scaled up.
-- [#515](https://github.com/vllm-project/vime/issues/515) (open): **[RFC]** A plan for DeepSeek-V4.1-Flash RL and SFT on **AMD** MI355X (gfx950):
-    - Fix the **ROCm** image. The described image fix appears to match merged commit 720d223.
-    - Make train offload work on ROCm 10 (`torch_memory_saver` pin, `NCCL_CUMEM_ENABLE=1`).
-    - Work around a ROCr/KFD IPC defect that stalls colocated **weight sync** with TP1 engines (#516).
-    - Port DSv4.1, starting in disaggregated mode.
+- [#519](https://github.com/vllm-project/vime/issues/519) (open): A user reports that `SampleCodec.prepare` in `vime/data/codec.py` is slow on Samples with long id lists. The nested `visit()` encoder repeats imports and `isinstance` checks for every list item, and rebuilds the replay field set for each field. In the user's benchmark (32 groups × 2 Samples), 8192-id lists take about 160 ms, versus 6 ms for 64-id lists. The user says the encoded output is still correct. They propose hoisting the imports and fast-pathing plain-scalar lists, which in their local test brings the 8192-id case down to 30 ms. Users with long rollout sequences could see CPU overhead in data transport and buffer checkpointing. This is a reported **performance** concern and has not been confirmed as a **regression**.
+- [#522](https://github.com/vllm-project/vime/issues/522) (open, labeled `question`): The author describes running Qwen3.5/3.6-35B-A3B (**GDN** linear attention + 256-expert MoE) on Ascend NPU from the separate `ascend` branch, in non-colocated and colocated modes. The described work includes:
+    - a `fla-npu` native GDN backend
+    - TP sharding of the GDN layer, with a merged qkv+z+b+a projection
+    - per-sub-matrix TP gather for **weight sync**
+    - support for both routed-expert **checkpoint** layouts
+    - passthrough of visual/MTP weights on HF save
 
-    It also reports several ROCm problems on `main`: a build failure at `7a9a81e` before the pin, the `gsm8k_async` CI step pointing to a removed file, and NIXL being imported as `nixl_rocm`.
+  The author reports 16% lower train time and AIME rising from 0.20 to 0.81 over 100 steps. None of this is in `main`, so `main` users cannot use it yet.
+- [#524](https://github.com/vllm-project/vime/issues/524) (open, labeled `question`): A user (writing in Chinese) says a **tracing** span name is misleading. In `examples/coding_agent_rl/generate.py`, the `sandbox_boot_wait` span also covers `sandbox_create` and `harness_install`, so trace views can misattribute where time goes. The user suggests renaming the span.
 
 ## Stats
 - **Total Commits**: 3
 - **Analyzed Commits**: 3
 - **Active Contributors**: 2
-- **Files Changed**: 303 (unique paths across the window; renames counted once)
+- **Files Changed**: 50
 - **Training-Specific Commits**: 1 (33.3% of total)
 - **New Issues**: 3 (3 open, 0 closed at collection time)
 
