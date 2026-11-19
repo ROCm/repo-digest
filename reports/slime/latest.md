@@ -1,20 +1,20 @@
-# slime Weekly Digest - 2026-11-12
+# slime Weekly Digest - 2026-11-19
 
 ## Summary
-The only merged change this week adds NVIDIA Nemotron 3.5 Super VL (Nemotron-H / Nemotron-H VL) support to the **Megatron** backend, with weight converters, **SGLang** patches, a **GRPO** GEO3K VLM example, and a Docker image that now builds the Mamba kernels. Two new user-reported issues (not confirmed regressions) say that `--save-retain-interval` deletes or partly deletes previous **checkpoint**s because of how slime numbers iterations, and that multimodal **rollout** encodes the same images again for every sample in a group, which costs **performance**.
+No commits already merged into `main` have commit timestamps within the last 7 day(s). Three new issues were reported, all still open. Two describe reliability problems: in one, **R3** routing capture fails systematically when used with **PD disaggregation** on a MoE model. In the other, an **SGLang** engine that dies between the end of a **rollout** and **weight sync** stops a `--use-fault-tolerance` run. These are user-reported problems, not confirmed regressions.
 
 Source: [THUDM/slime](https://github.com/THUDM/slime), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-11-05T23:05:40Z through 2026-11-12T23:05:40Z. Issue states reflect collection time.
+Window (UTC): 2026-11-12T23:03:57Z through 2026-11-19T23:03:57Z. Issue states reflect collection time.
 
 ## Key Changes
 
+No commits already merged into main have commit timestamps within the last 7 day(s).
+
 ### 🔴 High Priority
 
-- Add NVIDIA Nemotron 3.5 Super VL support (GRPO on GEO3K, Megatron backend) by *Shifang Xu (NVIDIA)* [79aa41a](https://github.com/THUDM/slime/commit/79aa41a884ab0bf65222c94418f6357d3c31192b)
-
-    Adds a new **Megatron** model path for Nemotron-H and Nemotron-H VL. It includes HF↔Megatron weight converters, `slime_plugins` model definitions, a `scripts/models` config, **weight sync** updates, and a GEO3K VLM example for **GRPO**. The Docker image now builds `mamba-ssm` and `causal-conv1d`, which Mamba2 layers require. It also adds **SGLang** patches for multi-image placeholder expansion and C-RADIO LayerScale, refreshes the Megatron-SGLang aligned patch, and adds an 8-GPU e2e test to CI. Users should rebuild their images and expect long kernel compile times. No **ROCm**/**AMD** support is indicated; the new kernel builds are **CUDA**-specific.
+None
 
 ### 🟡 Medium Priority
 
@@ -26,16 +26,17 @@ None
 
 ## Newly Submitted Issues
 
-- [#2532](https://github.com/THUDM/slime/issues/2532) (open): The reporter says `--save-retain-interval` ends up deleting every previous **checkpoint**. slime passes the 0-based `rollout_id` to Megatron as the iteration, so saves land on iterations like 19, 39, …, which are never multiples of the retain interval. In the reporter's reproduction only the latest checkpoint survived. A previous one was left half-deleted, with a shard missing but `metadata.json` still present, so it looks loadable but is not. The reporter suspects the cause is actors being killed with `ray.kill` before Megatron's background deletion thread finishes. Users who don't set `--save-retain-interval` are reportedly unaffected. The issue proposes fixes for discussion.
-- [#2533](https://github.com/THUDM/slime/issues/2533) (open, labeled `bug`): A **performance** request for the native **SGLang** multimodal **rollout** path. Each sample in a prompt group repeats PNG/base64 encoding of identical images, for example 8 encodes for `--n-samples-per-prompt 8`. In the reporter's instrumented fork (not an upstream benchmark), a Qwen3-VL-8B workload spent about 51.7% of rollout wall time on encoding. The reporter proposes reusing the encoded payload within a group while keeping each generation request independent.
+- [#2546](https://github.com/THUDM/slime/issues/2546) (open): A user trained a Qwen3.5 MoE model (30B/35B-A3B, 32× A800) with **R3** (`--use-rollout-routing-replay`) and **PD disaggregation** (mooncake transfer backend). They report that routing capture fails systematically: 670 of 1415 token rows have no captured routing. This raises a `ValueError` because it is far above the 64-row tolerance. The reporter says the problem continued after they applied a proposed upstream **SGLang** patch and changed `slime/utils/types.py` locally. They report slime 0.4.0 and SGLang 0.5.15.post1. According to the report, R3 combined with PD disaggregation currently blocks MoE training.
+- [#2548](https://github.com/THUDM/slime/issues/2548) (open): A contributor from the boxd sandbox service asks whether the maintainers want a boxd **sandbox** provider for `examples/coding_agent_rl`. It would sit alongside the existing Sunabako and E2B providers and be selected with `SWE_SANDBOX_PROVIDER=boxd`. The contributor offers either a PR to the example or an out-of-tree provider loaded by import path (see #2447). This is a question about a feature, not a bug.
+- [#2551](https://github.com/THUDM/slime/issues/2551) (open): The reporter describes a **fault-tolerance** gap. With `--use-fault-tolerance`, engine health monitors are paused from the end of a **rollout** until `update_weights`. If an **SGLang** engine dies in that window (crash, OOM, node fault), it stays in the router and engine list. `recover_updatable_engines` does not replace it, so the `pause_generation` call during **weight sync** gets `ConnectionError` and the run exits. They also say that with fully-async rollout the periodic health check never runs when rollouts are shorter than `--rollout-health-check-first-wait` (600 s by default). They reproduced this on 16× H200 with slime 0.4.0. The reporter says their fix and unit test are in #2552, which is not merged in this window.
 
 ## Stats
-- **Total Commits**: 1
-- **Analyzed Commits**: 1
-- **Active Contributors**: 1
-- **Files Changed**: 32
-- **Training-Specific Commits**: 1 (100% of total)
-- **New Issues**: 2 (2 open, 0 closed at collection time)
+- **Total Commits**: 0
+- **Analyzed Commits**: 0
+- **Active Contributors**: 0
+- **Files Changed**: 0
+- **Training-Specific Commits**: 0 (0% of total)
+- **New Issues**: 3 (3 open, 0 closed at collection time)
 
 ---
 *Generated by [Claude Code](https://claude.ai/code). Verify key conclusions against the linked commits and issues.*
