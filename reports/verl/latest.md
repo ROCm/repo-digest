@@ -1,143 +1,167 @@
-# verl Weekly Digest - 2026-11-12
+# verl Weekly Digest - 2026-11-19
 
 ## Summary
-This week landed several notable training features: opt-in custom dataloaders for the V1 **PPO** trainer, **Megatron** support for score centering, and an FSDP `batch_invariant` mode for bitwise train/rollout log-prob comparison. It also fixed a **performance** **regression** in which `OMP_NUM_THREADS` oversubscribed CPUs on **Ray** workers, and Ascend NPU users now need vllm-ascend 0.30. Among the 16 newly reported (unverified) issues are several training-correctness concerns: Megatron resume without the optimizer reverting weights, Qwen3.5 linear-attention state leaking across packed samples without FLA, microbatch-dependent Clip-Cov selection, and **GSPO** IS ratios counting rejected tokens. There is also a **ROCm** FP8_BLOCK **rollout** crash.
+This week the V0 **PPO** trainer was removed, leaving V1 as the only trainer. The legacy fully-**async** and one-step-off trainers moved to verl-recipe, `DataProto` auto padding was removed, the single-controller dispatch API changed, and **agent loop** prompts now raise an error instead of being silently truncated, so many users will need to migrate before upgrading. Other changes add a TileLang fused linear cross-entropy backend for **distillation** and a salt mode that prevents stale external KV cache reuse during **rollout**. New issues report possible training-correctness problems, none of them confirmed yet: advantage handling for multi-trajectory sessions and mini-batches, model weights changing when Megatron **checkpoints** are resumed, and **ROCm**/**AMD** CI problems.
 
 Source: [verl-project/verl](https://github.com/verl-project/verl), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-11-05T23:05:56Z through 2026-11-12T23:05:56Z. Issue states reflect collection time.
+Window (UTC): 2026-11-12T23:05:21Z through 2026-11-19T23:05:21Z. Issue states reflect collection time.
 
 ## Key Changes
 
 ### 🔴 High Priority
 
-- Support custom dataloaders for V1 sync/async **PPO** via new `data.custom_dataloader` config by *Chun-Mao (Michael) Lai* [5c5ab4b](https://github.com/verl-project/verl/commit/5c5ab4b2b1bd185bbecc14506941e0a3739da604)
+- [BREAKING] Remove the V0 **PPO** trainer and move the legacy fully-**async** and one-step-off trainers to verl-recipe, by *Begunner* [124d22c](https://github.com/verl-project/verl/commit/124d22c401f3c93779ec5171070cb9f0fc857c8d)
 
-    This adds an opt-in `data.custom_dataloader` setting. It defaults to `null`, so existing behavior is unchanged. When set, a user-supplied loader class (for example a streaming source) replaces the default dataset, sampler and dataloader, and must yield collated batches containing `raw_prompt`. Constraints: unsized loaders require `trainer.total_training_steps`, and **checkpoint** resume requires `state_dict()`/`load_state_dict()`. The option cannot be combined with `data.custom_cls`, and the validation loader must restart fresh on each iteration and terminate.
+    `verl.trainer.main_ppo` now always uses V1, and `trainer.use_v1=false` is ignored. Several entry points are gone: `main_ppo_v0`, `ppo.ray_trainer`, `experimental.fully_async_policy`, `experimental.one_step_off_policy`, and `skip.rollout`/`skip.async_rollout`. Shared helpers moved to `verl/trainer/ppo/trainer_utils.py`. The **async** and one-step-off workflows now live in verl-recipe, pinned to verl v0.9.1. The full-determinism workflow also depended on V0, so mainline no longer guarantees bitwise reproducibility. The author reports only smoke tests (Hopper, **vLLM**, Qwen2.5-0.5B).
 
-- Stop applying the `OMP_NUM_THREADS` default to every **Ray** worker; hand it only to `RayWorkerGroup` training workers when VeOmni **FSDP** CPU offload is on by *vOv* [4b39670](https://github.com/verl-project/verl/commit/4b396702074369ae977db99387bd8470f02f62b9)
+- [BREAKING] Remove `DataProto` auto padding; `DP_COMPUTE_PROTO` now requires the batch size to be divisible by the world size, by *Chi Zhang* [909bb91](https://github.com/verl-project/verl/commit/909bb91387b96fd20dddc86cb9c026b536f0f05e)
 
-    This fixes a **performance** **regression** from #8371, which oversubscribed CPUs on agent loop, reward and rollout workers. In the author's benchmark, step time fell from 84 s to 44 s. **Upgrade note:** non-training Ray workers go back to Ray's default of 1 thread. Training workers get the cores/GPUs default only when `veomni.enable_fsdp_offload` is on, via `VERL_TRAINING_WORKER_OMP_NUM_THREADS`. An explicit `OMP_NUM_THREADS` still takes precedence. The CPU-offload, Megatron and multi-node paths were not tested.
+    This removes `DataProtoConfig`, `VERL_AUTO_PADDING`, the `auto_padding` argument and `is_padding_enabled`. A batch that does not divide evenly across workers now fails to split. The change fixes a **training**-correctness risk: the old trim step could drop real samples when workers expanded, filtered or reordered rows. Code that relied on auto padding should call `DataProto.padding`, `pad_dataproto_to_divisor` and `unpad_dataproto` explicitly.
 
-- Add score centering support to the **Megatron** actor (TP/CP vocab-parallel head log-probs) by *vOv* [b363245](https://github.com/verl-project/verl/commit/b363245c5bd51acd2380963f41f7f1e8a2323d26)
+- [BREAKING] Send data-parallel shards only to the model-parallel source rank, and add worker pre/post hooks, by *Chi Zhang* [44cdff3](https://github.com/verl-project/verl/commit/44cdff30191583b9aa14d90872b6ba1447a7275d)
 
-    Score centering, a **rollout correction**/**importance sampling** variant, now works with `actor.strategy=megatron` as well as FSDP. Sampler head log-probs are normalized across TP shards and split by CP. The prerequisites are unchanged: v1 trainer, **vLLM** `topk_log_probs>0`, `bypass_mode` with the `reinforce` loss, and a single-turn **agent loop**. Cross-entropy now receives a copy of the logits, which costs extra memory. In the PR's runs, `ppo_kl` was higher than FSDP in the first two steps; the cause was not investigated.
+    Dispatch and collect queries now return `DispatchInfo(dp_rank, is_mp_src)` and `CollectInfo(is_collect)`. The keys were renamed to `dispatch_info` and `collect_info`, so custom workers and trainers must migrate. The new opt-in `dispatch_mp_src_only=True` can reduce data-transfer overhead. The new `worker_preprocess_fn` and `worker_postprocess_fn` hooks are rejected when TransferQueue is enabled. By default, data is still sent to all ranks. The author notes that the final version was not re-run on the multi-GPU Ray cluster test.
 
-- Add opt-in FSDP `batch_invariant` option for batch-invariant actor forward and vLLM-sampler log-prob formula by *vOv* [2b4ed68](https://github.com/verl-project/verl/commit/2b4ed6826a39205838d0ca004bdd942334dbe4b6)
+- `data.truncation` now applies to the **agent loop** prompt-length cap. Under the default `error` setting, overlong prompts now raise an error instead of being silently left-truncated. By *Jackie2049* [28b0d52](https://github.com/verl-project/verl/commit/28b0d52862f1e9d18332ecd909504167242585f6)
 
-    `actor_rollout_ref.actor.fsdp_config.batch_invariant` (default off) installs vLLM's batch-invariant kernels in the **FSDP** engine. Train and rollout log-probs can then be compared bitwise via `training/rollout_logprobs_mismatch_count`. The option requires vLLM in the training process and rejects `use_fused_kernels`. A 0-diff target also needs `top_k=-1` and `top_p=1`. The overrides are process-global, and on SM80 every GEMM goes through Triton, which costs step time. It was tested on NVIDIA H20 only.
+    `SingleTurnAgentLoop` and `ToolAgentLoop` now follow the configured policy: `left`, `right` or `middle`. The default `error`, or any unknown value, raises `ValueError`. Runs that relied on silent truncation will fail: raise `rollout.prompt_length` or set `data.truncation` explicitly. `RolloutConfig` now also rejects `prompt_length <= 0`.
 
-- Speed up Qwen3.5-35B Megatron **GRPO** on Ascend NPUs with MTP spec decode, **rollout** correction bypass mode, and new e2e CI by *ruanhao566 (H-Partners)* [1d4194c](https://github.com/verl-project/verl/commit/1d4194cb2804d9af5f47352058fbbf482f76dddf)
+- Validate **distillation** estimator and update-mode combinations, and change the Python default of `use_policy_gradient` to False, by *Adrian Wang* [3108beb](https://github.com/verl-project/verl/commit/3108bebc2d2f2bbe4642cd95f82a778667252d39)
 
-    The NPU branch of this example gains MTP speculative decoding and `rollout_correction.bypass_mode=True`. It switches to a dual-TP4 rollout layout with a larger batch size, and a new 16-NPU Atlas A3 e2e workflow covers it. The CUDA path is unchanged. Ascend users of this example must migrate from the old single-TP8 engine and batch size 32, and need 16 NPUs plus the pinned vllm-ascend, MindSpeed-Bridge and Megatron-LM versions.
+    This is a breaking `DistillationLossConfig` change that also fixes **KL** distillation correctness. Setting `use_policy_gradient=True` together with `abs`, `mse`, `k2`, `k3` or `low_var_kl` now raises an error, because k3 with policy gradient can increase the reverse KL instead of reducing it. Configs built in Python that never set the flag now default to direct backpropagation. For reverse-KL policy gradient, use `k1`/`kl` with `use_policy_gradient=True`. See `docs/algo/opd.md` for migration steps.
+
+- Add a TileLang fused linear cross-entropy backend (**FSDP**, **Megatron**, VeOmni) with top-k log-prob support for **distillation** and score centering, by *Joel (ByteDance)* [8a2d1d9](https://github.com/verl-project/verl/commit/8a2d1d9227544e5f5dbb428d9797858b1ad5664f)
+
+    This is a **performance** and memory feature: setting `impl_backend: tilelang` with `use_fused_kernels=true` computes log-probs and **entropy** without materializing the full logits. TileLang runs only on **CUDA**, and it is required whenever top-k auxiliary labels are passed. Triton and Liger now fail explicitly on multi-label input. Existing VeOmni OPD configs should set `impl_backend=tilelang`. `pyproject.toml` and `uv.lock` dependencies changed. No **ROCm** support.
+
+- Add an opt-in `rollout.external_kv_cache_invalidation: salt` that tags requests with a `cache_salt` for each weight version, so external KV caches no longer need to be reset, by *Daegyu Han* [c012b10](https://github.com/verl-project/verl/commit/c012b10a498d1fa65002fc20f8ece00392a4fc69)
+
+    This fixes a **rollout**-correctness problem: requests could reuse stale KV from older policy weights in external tiers (Mooncake, LMCache MP, HF3FS, SGLang HiCache) on **vLLM**, **SGLang** and TRT-LLM. The default stays `reset`. Requirements for `salt`:
+    - every weight update must pass `global_steps`
+    - vLLM KV connectors must be keyed by block hashes; `LMCacheConnectorV1` is rejected and PD disaggregation is not supported
+    - keeping the store across sleep requires a vLLM build newer than 0.33.0
+    - the store needs an eviction policy
+
+- Upgrade the ROCm Docker image to **vLLM** v0.32.0 and update the ROCm e2e CI image and environment, by *Yuhan Yang (AMD)* [ca439af](https://github.com/verl-project/verl/commit/ca439aa5afcfe913c075570a9cb3f0f83730904d)
+
+    **ROCm/AMD** users should pull `verlai/verl:rocm7.14_torch2.12_release_1112`. It includes transformers 5.16.1, mcore_bridge 1.7.0 and megatron-bridge 0.5.1. CI sets `HSA_TOOLS_DISABLE_REGISTER=1`; without it, idle vLLM workers busy-poll, which roughly doubled the **Megatron** MoE job time. Setting the variable also removes GPU records from profiler traces, so users profiling with this image may hit the same busy-polling.
 
 ### 🟡 Medium Priority
 
-- Exclude all-padding rows from per-sequence off-policy **rollout correction** metrics by *rrrxxx0510* [3ba1e05](https://github.com/verl-project/verl/commit/3ba1e05d5235424b786b22919b8750fa04be3351)
+- Set `KMP_INIT_AT_FORK=TRUE` in the ROCm e2e workflow and Dockerfile to stop dataloader fork deadlocks, by *Yuhan Yang (AMD)* [89f5d51](https://github.com/verl-project/verl/commit/89f5d519a2d9577d44283becd973e652e47480aa)
 
-    Padding rows from `_balance_batch` skewed `training_ppl`, `rollout_ppl`, `log_ppl_diff`, `ppl_ratio` and `chi2_seq`. In the author's repro, three padding rows moved `training_ppl` from 7.39 to 2.60. Only logged metrics change; loss and **importance sampling** weights are untouched. Dashboards for padded **FSDP**/**Megatron** runs may shift.
+    Fixes intermittent **PPO** hangs on **ROCm** (3 of 20 test runs hung). The fix takes effect only after the image is rebuilt. **AMD** users running outside the image should `export KMP_INIT_AT_FORK=TRUE` before launching. The problem was reported in [#8712](https://github.com/verl-project/verl/issues/8712).
 
-- Add `reward.preset` config to pick a built-in fallback **reward** scorer from the CLI by *Shawn/Yuxuan Tong* [8c94a12](https://github.com/verl-project/verl/commit/8c94a12d7811030413cd85e2bba6db863e0913c8)
+- Fix two **vLLM** MTP weight-sync problems during **rollout**:
+  - Skip MTP completeness checks during bucketed IPC weight sync, by *lxb007981* [0c0a7a0](https://github.com/verl-project/verl/commit/0c0a7a0f3be1f5ab0581d347d8cbd726f84bcb1d)
+  - Resolve both `drafter.model` and `speculator.model` for ModelRunner V2, by *lxb007981* [cc1773b](https://github.com/verl-project/verl/commit/cc1773b2f7c6145c921c5fa71e827eb6773bc4de)
 
-    Datasets with unrecognized `data_source` values previously raised `NotImplementedError`. They can now be scored with presets such as `math_dapo`, `math_verify`, `gsm8k` or `prime_code`. Built-in routes and `custom_reward_function.path` still take precedence. An invalid preset now raises an error at startup instead of silently scoring 0.0. The default `null` needs no migration.
+    Users running MTP or speculative decoding with colocated vLLM need both fixes to keep the draft model in sync with the trained weights. On older vLLM versions the completeness-check change does nothing. No config changes are needed.
 
-- Fix math_dapo Minerva scoring to parse bold `**Answer:**` labels by *Shawn/Yuxuan Tong* [3255f6b](https://github.com/verl-project/verl/commit/3255f6b1b1fc978be03e8598bc48f4f48d714be0)
+- Report vLLM `finish_reason="length"` as `stop_reason="length"` in the **vLLM** **rollout** server, by *Yuyang Ding* [61adb0c](https://github.com/verl-project/verl/commit/61adb0c7eb90730306e7794c2bf248331211e657)
 
-    Markdown-bold answer labels such as `**Answer:** 16` were wrongly scored as incorrect. A bare trailing label now falls back to `\boxed{...}`. Users of the DAPO math **reward** may see higher, more accurate scores after upgrading.
+    Truncated generations no longer report `completed`. Custom **agent loop** code that treats `completed` as the only successful stop reason should also handle `length`.
 
-- Drop obsolete vLLM-Ascend NPU patch shims and retarget remaining patches to vllm-ascend 0.30 by *wzrd* [f3b9d3d](https://github.com/verl-project/verl/commit/f3b9d3d9ecad8fa9fd03a4a440aadadfd5d3a4e0)
+- Skip rows that have no valid tokens in the **rollout correction** **importance sampling** and rejection-sampling sequence metrics, by *hx (Meta)* [a4e0dd2](https://github.com/verl-project/verl/commit/a4e0dd2188e3dd458a2cbb097c03d975ca77f159)
 
-    `npu_vllm_patch.py` now requires `0.30.0 <= vllm < 0.31.0`, and seven shims whose fixes are now upstream are removed. **Ascend users must upgrade to vllm-ascend 0.30**, because the patches no longer apply on 0.23. Device validation of DeepSeek-V4 weight sync, FIA decode and GLM-5.2 numerics was still pending at merge. No **ROCm**/**AMD** impact.
+    Padding rows no longer bias the `rollout_is_seq_*` and `rollout_rs_seq_masked_fraction` metrics. Loss and gradients are unchanged, but dashboards may shift for runs that had padding rows.
 
-- Align Ascend CANN 9.2.1 images and Megatron/MindSpeed pins, and gate the NPU vLLM config on vLLM ≥0.27.1 by *renjunying2 (Huawei)* [1e12526](https://github.com/verl-project/verl/commit/1e125260a3b89b91398df2381deb7419af754653)
+- Add `trainer.v1.sampler.poll_interval` for the V1 replay buffers, by *hx (Meta)* [27129e3](https://github.com/verl-project/verl/commit/27129e351ac5d6f038d009478f1e7cdebfbd4397)
 
-    This adds CANN 9.2.1 Dockerfiles, and the `latest-vllm-*` tags now point at them. The 9.1.0 images move back to **vLLM**/vllm-ascend v0.23.0. The install script pins **Megatron**-LM core_v0.18.2 and the 26.2.0 MindSpeed stack. Ascend users should rebuild images and check their versions before upgrading.
+    The default stays at 2.0 s. Setting it to 0.1 gave roughly a 5–9% speedup on a fast-step **GRPO** run on TPU. Invalid values now raise `ValueError`.
 
-- Enable vLLM-Ascend RL mode by default when preparing vLLM engine arguments on NPU by *lxb007981* [69921c4](https://github.com/verl-project/verl/commit/69921c419cb4ee880c01744f0e6ffcf17337abc0)
+- Pin TransferQueue 0.1.11 in the TPU GRPO Dockerfile, by *hx (Meta)* [3eb34c0](https://github.com/verl-project/verl/commit/3eb34c009b1558c68a8422e9c6a538f37cf798f6)
 
-    On Ascend, `additional_config.rl_config.enabled` now defaults to true, which disables NZ weights during sleep/wake and weight updates for **vLLM** **rollout**. To keep the old behavior, set `rl_config.enabled=false`.
+    With the old 0.1.8 pin, V1 **async** **checkpoints** failed with an `AttributeError`. TPU users should rebuild the image. The docs now note that multi-node runs need `trainer.default_local_dir` on a shared filesystem.
 
-- Allow vLLM sleep level 2 on Ascend NPU when vllm-ascend >= 0.30.0 by *lxb007981* [482f86f](https://github.com/verl-project/verl/commit/482f86fd09959912c99c0acf2b90329f9e061da7)
+- Avoid dynamic-shape boolean indexing in the `ppo_loss` old-logprobs mismatch metric, by *askhat-g (Google)* [1628f46](https://github.com/verl-project/verl/commit/1628f464c07b16cc8b87d7bfbbb7998d235441db)
 
-    The sleep-level-1 guard now applies only below vLLM 0.30.0, and the MTP and LoRA guards still force level 1. In the author's GLM-5.2 run, step time fell about 5% and throughput rose about 7%. The check reads the vLLM version rather than the vllm-ascend version. See related issue #8609 below about separate draft-model weights.
+    Stops repeated XLA recompilation, which ran out of memory on TPU after several steps. The metric value is unchanged, and the change also removes a host sync.
 
-- Expand Ascend NPU CI coverage and fix HCCL **checkpoint** engine group teardown by *lxb007981* [b61bda7](https://github.com/verl-project/verl/commit/b61bda7923fc935523db76e4afc83f217999eb2d)
+- Fix **PPO** metrics collection so `token_level_rewards` is fetched only when `use_kl_in_reward` is enabled, by *ChibiQuest (Huawei)* [07490cb](https://github.com/verl-project/verl/commit/07490cb5ce1fa1818e0d98540abc9bccd02534ac)
 
-    With `rebuild_group` enabled, `HCCLCheckpointEngine` teardown now calls `pyhccl.close()`, so cleanup between weight syncs should be cleaner. The commit also adds NPU CI coverage for Megatron TP **KL**, LoRA merge and vLLM ServerAdapter over HCCL.
+    Fixes missing-field errors in the V1 trainer when **KL**-in-reward is disabled.
 
-- Keep ref weights resident in the Qwen3.5-35B Ascend NPU Megatron GRPO example script by *ruanhao566 (H-Partners)* [14535ee](https://github.com/verl-project/verl/commit/14535ee1d500ac5a96ea1e94f63c6fbfe11642dc)
+- Save generation configs that transformers refuses to save (e.g. GLM-5) in the **checkpoint** managers and the model merger, by *Jeremy Savarese* [2dc537b](https://github.com/verl-project/verl/commit/2dc537b87e757d2ecf9321149e87ddc5ea957f70)
 
-    The example now sets `ref.megatron.param_offload=False`. The author reports ref log-prob time dropping from 23.5 s to 9.5 s per step on 8-NPU A5, at the cost of more device memory. Only the NPU branch changed.
+    Previously, **FSDP** and **Megatron** checkpoints of GLM-5 models were written without `generation_config.json`, so serving those checkpoints missed GLM's stop tokens. GLM-5 users should re-save or re-merge their checkpoints.
 
-- Unify dense Qwen3 (0.6B–32B) TPU GRPO recipes into a single `run_qwen3_torchtitan.sh` launcher by *wenjung2007* [1ec15fe](https://github.com/verl-project/verl/commit/1ec15fed25f3fbdb79b15b8e4213292d9038e2d3)
+- Let **vLLM** and **SGLang** `launch_servers` run on workers without an accelerator, and add a `_get_server_env_vars` hook, by *Shawn Lu (Google)* [2a04459](https://github.com/verl-project/verl/commit/2a04459b31f9d99e33362a25712c69c2867ca109)
 
-    The old `run_qwen3_0_6b_*`/`run_qwen3_4b_*` scripts are removed. Use `MODEL_SIZE=...` with the new launcher, which adds 1.7B–32B **GRPO** presets on TPU v6e. `TPU_EAGER_MODE` now defaults to `DEFER_AND_FUSE`.
+    Lets out-of-tree platforms such as TPU reuse the **rollout** server launch path. GPU and NPU behavior is unchanged.
 
-- Bump `tpu-sync-torch` and `vllm-torchtpu` pins in the TPU GRPO Dockerfile by *Shawn Lu (Google)* [b10a5d4](https://github.com/verl-project/verl/commit/b10a5d421a1bb3ab4067d6aa47b8e5ead1a34df3)
+- Add `PlatformBase` hooks for the torch profiler's device activity and extra kwargs, by *wenjung2007* [565bc5c](https://github.com/verl-project/verl/commit/565bc5ca267d56eaaf45a6f5d10a82ad4ca9ba29)
 
-    The new pins enable `return_after_d2h` in `verl-hardware-plugin` and add `TPUWorker.reset_encoder_cache`. TPU GRPO users should rebuild their image.
+    Out-of-tree backends (TPU, MLU) no longer need to patch `get_torch_profiler`. **CUDA** and **ROCm** still use `DEVICE_ACTIVITIES`.
+
+- Support the `delta_sharded` **checkpoint** engine on Ascend NPU through an HCCL transport, by *wucong25* [2ef644a](https://github.com/verl-project/verl/commit/2ef644af0fd1cbaca3bfe621c187ac1f5a394114)
+
+    Enable it with `actor_rollout_ref.rollout.checkpoint_engine.backend=delta_sharded`. The `cupy` and `ray.util.collective` imports are now optional. The **CUDA**/NCCL path should behave as before.
+
+- Tune the DeepSeek V4 Flash **FSDP** Turbo recipe for Ascend NPU and remove the engine's `_gradient_sync_context` override, by *zhouhengan1211* [629e30e](https://github.com/verl-project/verl/commit/629e30e23efe6b7937970b77c03fd339e9756501)
+
+    `FSDPTurboEngineWithLMHead` now uses the base engine's gradient-sync handling. FSDP-Turbo users should check gradient accumulation, **performance** and memory after upgrading.
+
+- Add a `schedule` option to the NPU mstx profiler so that only selected actor mini-batch updates are traced, by *xieanran* [cc35929](https://github.com/verl-project/verl/commit/cc35929bf8eedf5f3eb7c4ace3441dfd9f6d4c0e)
+
+    This is opt-in under `profiler.tool_config.npu`. With `discrete=False`, a schedule also affects the log-prob traces.
+
+- Fix the Ascend NPU source installation and add the required FLA NPU backend, by *renjunying2 (Huawei)* [4191e7f](https://github.com/verl-project/verl/commit/4191e7f910d85d69acb8c45f4840f10faa535165)
+
+    Source installs now require `FLA_NPU_DEVICE` (a2/a3/a5) and install `flash-linear-attention-npu`. Ascend users building from source should follow the revised steps.
 
 ### 🟢 Low Priority
 
-- Add MXFP4 MoE recipe, Qwen3-30B-A3B **GRPO** example script and docs page by *0z5a (University of Tübingen)* [63913d1](https://github.com/verl-project/verl/commit/63913d1d5fef4d028658c330f397c0bd2a909213)
+- Ascend NPU CI updates (CI and tests only, no runtime impact):
+  - Run the **vLLM** **reward**-loop CI on 16 NPUs, by *lxb007981* [3503bec](https://github.com/verl-project/verl/commit/3503bec3420dbb8ee67f8c9da6c0721570ae75ac)
+  - Add vLLM top-k sampling tests, by *lxb007981* [35c6520](https://github.com/verl-project/verl/commit/35c652028bb5f7e4f0a1397bdacd538dd0e604c7)
+  - Enable `PYTHONFAULTHANDLER` to diagnose intermittent segfaults, by *lxb007981* [7810520](https://github.com/verl-project/verl/commit/781052063c338cdc911e585a6404e96cfeb04681)
+  - Call `pytest` directly instead of through `python -c` wrappers, by *XiangRun Liu* [b0871fd](https://github.com/verl-project/verl/commit/b0871fd89d19329d8c9ed58e5402b11dcf920b64)
 
-    This adds an example and docs only, with no runtime changes. The recipe runs **Megatron** training with **vLLM** rollout. It requires Blackwell GPUs and Blackwell-only DeepGEMM FP4 kernels, so **ROCm**/**AMD** is not covered. In the author's runs, MXFP4 QAT cut `rollout_corr/kl` from 0.0150 to 0.0030 for about 6% more step time.
+- Add Intel XPU to the README hardware support list, by *kahlun (Intel)* [622cd6c](https://github.com/verl-project/verl/commit/622cd6c12b2796a3b541fe50babebf8aa3076799)
 
-- Add Qwen3-30B-A3B (MoE) GRPO example recipe for TPU with TorchTitan trainer and vLLM rollout by *wenjung2007* [0269aaf](https://github.com/verl-project/verl/commit/0269aafa5f1818f28206d281cef9d1eebb6d06e4)
+    Documentation only.
 
-    This adds a TPU v7x/v5p example only, and requires `verl-hardware-plugin` with Qwen3 MoE support. The author reports GSM8K accuracy rising from 0.508 to 0.914 over 20 steps.
+- Add links to Ascend recipe repositories in the English and Chinese quick start docs, by *renjunying2 (Huawei)* [6e7db96](https://github.com/verl-project/verl/commit/6e7db96322d30a186dfed8d9cb82d5d8a50ad037)
 
-- Fix Ascend tutorial links and navigation in docs (Sphinx cross-refs, local TOCs, MyST anchors) by *lxb007981* [b17218b](https://github.com/verl-project/verl/commit/b17218ba58a6fbcdfb0de32772e3c2a79f88529d)
-
-    This is docs only. The `run_qwen3_30b_mxfp8_megatron` example script gains its missing `.sh` extension, so anyone who calls it by the old name must update it.
-
-- Ascend docs and CI housekeeping, all docs/CI-only with no runtime impact:
-    - Replace Sphinx-only `:doc:` references with absolute links by *lxb007981* [81464bb](https://github.com/verl-project/verl/commit/81464bb6d35cbb43962be42b0088a591e7020f21)
-    - Fix navigation and broken links in the Chinese Ascend install guide by *lxb007981* [7de8f2e](https://github.com/verl-project/verl/commit/7de8f2e61f7011679d56c74677ef7bea87d24946)
-    - Update Ascend **SGLang** install guides to require Python >=3.12 by *lxb007981* [689fa1a](https://github.com/verl-project/verl/commit/689fa1a2a1a35fbfee6cdd8cabdec0c15688ccaf)
-    - Clarify Ascend image and Qwen3-ASR Megatron-Bridge patch guidance by *renjunying2 (Huawei)* [c16ec34](https://github.com/verl-project/verl/commit/c16ec340e5070459bf6d064b0fc08ae91151b91e)
-    - Standardize Atlas training and Ascend 950 product names by *likaizheng666-sketch* [ce42aa8](https://github.com/verl-project/verl/commit/ce42aa82abcf4c0a07d7273b96aafe8485d00043)
-    - Point all Ascend CI image references at the `base_image` SWR registry prefix by *likaizheng666-sketch* [7c760b0](https://github.com/verl-project/verl/commit/7c760b079215a674db1d759fe761e2aa1312baf1)
-    - Scale Ascend NPU CI/nightly tests to all 16 NPUs per node by *lxb007981* [033b1bd](https://github.com/verl-project/verl/commit/033b1bdfb0039fc7705f201fb97fb96143e063dc)
-    - Scale NPU unit CI workloads (FSDP2 regression, **checkpoint**-engine tests) to 16 devices by *lxb007981* [121be09](https://github.com/verl-project/verl/commit/121be0996d6186bedbc11d575aed0990cee0de11)
-    - Apply deterministic rollout settings to multimodal **agent loop** tests in CI by *lxb007981* [a911bca](https://github.com/verl-project/verl/commit/a911bca25d6adb26f5bef2dc57e7ba62e99b7ade)
+    Documentation only.
 
 ## Newly Submitted Issues
 
-All 16 issues were **open** at collection time. They are user reports, not verified regressions or shipped fixes.
+**Training and algorithm correctness (reported, not yet confirmed)**
+- [#8741](https://github.com/verl-project/verl/issues/8741) (open): Reports two problems. First, `compute_advantage_for_multi_trajectories` collapses multi-turn sessions only for `grpo`. With `grpo_vectorized`, `rloo`, `rloo_vectorized`, `grpo_passk` or `gpg`, intermediate zero-reward turns are said to distort group statistics and give negative advantages to winning sessions. Second, `norm_adv_by_std_in_grpo=False` (Dr.GRPO) is reportedly ignored for `grpo_vectorized`, `gdpo` and `grpo_passk`. A CPU reproducer is included.
+- [#8766](https://github.com/verl-project/verl/issues/8766) (open): Reports that in the V1 sync and `colocate_async` trainers, GAE, REINFORCE++ and GDPO advantages are whitened over the full batch but used in smaller `ppo_mini_batch_size` updates. Each update chunk can then have a nonzero mean advantage, which may inflate `actor/loss` and make **entropy** collapse faster. The reporter proposes whitening each chunk.
+- [#8765](https://github.com/verl-project/verl/issues/8765) (open): Reports that resuming a **Megatron** **checkpoint** with `optimizer_cpu_offload` (`HybridDeviceOptimizer`) silently changes model weights during loading. In the v2 split checkpoint layout, `dummy_step()` reportedly runs a real optimizer step after the model weights are loaded, so the first rollout after a resume may use perturbed weights.
+- [#8719](https://github.com/verl-project/verl/issues/8719) (open): Reports that `full_determinism` has no effect on the **Megatron** engine. The key is missing from `megatron.yaml`, and the engine never reads it, even though the docs claim support on all engines.
+- [#8739](https://github.com/verl-project/verl/issues/8739) (open): Reports that **FSDP2** policy snapshot save and restore fail after inference when `reshard_after_forward=False`, because child modules keep their full parameters. This breaks V1 Decoupled **PPO** old-log-prob computation. A reproducer and proposed fix are described.
+- [#8735](https://github.com/verl-project/verl/issues/8735) (open): Reports that `fsdp_config.batch_invariant=True` crashes at the first backward pass on A100 and L40S (SM8x) with `aten::linear_backward` not implemented. vLLM's batch-invariance GEMM overrides are blamed. H100 is reportedly unaffected.
 
-**Training correctness (reported)**
-- [#8604](https://github.com/verl-project/verl/issues/8604) (open): The reporter says that resuming a **Megatron** actor with `load_contents` that excludes `optimizer` lets the first optimizer step overwrite the loaded **checkpoint** weights with "initial weights + one step". The cause is that the FP32 main params are never refreshed with `reload_model_params()`. This would silently discard checkpoint progress.
-- [#8629](https://github.com/verl-project/verl/issues/8629) (open): The reporter says that without flash-linear-attention (e.g. on Ascend NPU), Qwen3.5 gated-delta-net layers silently ignore `cu_seqlens` with `use_remove_padding=True`. Recurrent state then leaks across packed samples. They report high step-1 `ppo_kl` (0.147 vs 0.0007 after their fix) and reward decaying after about 50 steps.
-- [#8634](https://github.com/verl-project/verl/issues/8634) (open): The reporter says Clip-Cov (`loss_mode="clip_cov"`) computes its covariance statistics and clip quota per microbatch. The loss, even its sign, then depends on `ppo_micro_batch_size`. This is the same bug class that was fixed for KL-Cov in #7830.
-- [#8636](https://github.com/verl-project/verl/issues/8636) (open): The reporter says the **GSPO** sequence **importance sampling** ratio includes tokens that IcePop-style **rollout correction** has rejected. Those tokens can flip surviving tokens into the clipped regime. A related pattern is reported in `geo_mean`/`sapo`.
-- [#8632](https://github.com/verl-project/verl/issues/8632) (open): The reporter says Megatron policy snapshots don't restore persistent buffers such as MoE `TopKRouter.expert_bias`. Decoupled **PPO** old-log-prob recomputation then mixes old parameters with newer routing bias.
-- [#8651](https://github.com/verl-project/verl/issues/8651) (open): The reporter says `skip.rollout_tq` cache replay drops trajectories with `index > 0`, relabels sessions, and sizes the replay from the new prompt count rather than the cache. In multi-trajectory **agent** RL, the **GRPO** **advantage** could then be anchored on intermediate outputs.
+**Rollout, data plane and infrastructure**
+- [#8768](https://github.com/verl-project/verl/issues/8768) (open): Reports that TransferQueue logs, but otherwise ignores, a 30 s ACK timeout, so samples are silently dropped. `compute_log_prob` then fails later with `KeyError: 'loss_mask'`. Seen with the Qwen2-7B GSM8K **GRPO** recipe on verl v0.9.1 after validation passes. The suggested workaround is raising `TQ_DATA_UPDATE_RESPONSE_TIMEOUT`.
+- [#8769](https://github.com/verl-project/verl/issues/8769) (open): Reports that v0.9.1 can't be installed as documented, because the `uv.lock` wheel URLs for flash-attn, transformer-engine, apex and megatron-bridge return 404 after the wheelhouse tags were renamed. The reporter asks for a v0.9.2 release or restored asset names.
+- [#8770](https://github.com/verl-project/verl/issues/8770) (open): Reports that `import megatron.bridge` fails in the `verlai/verl:vllm024.dev2` image (`No module named 'modelopt'`) and that `flash-linear-attention` is missing. As a result, the default **Megatron** config and Megatron LoRA can't build models in that image.
 
-**Reward scoring (reported)**
-- [#8656](https://github.com/verl-project/verl/issues/8656) (open): The reporter says `prime_code` call-based scoring can be reward-hacked by returning an object whose `__eq__` always returns True, which gets full **reward**. They also report an `UnboundLocalError` with `continuous=False`.
-- [#8675](https://github.com/verl-project/verl/issues/8675) (open): The reporter says the `math_dapo` Minerva scoring only compares the last assignment of multi-variable answers. For example, `x=2, y=3` gets full credit against `x=1, y=3`.
+**ROCm/AMD**
+- [#8712](https://github.com/verl-project/verl/issues/8712) (closed): Reports that **PPO** training on **ROCm** hangs indefinitely at dataloader worker startup, because of `KMP_INIT_AT_FORK=FALSE` combined with LLVM OpenMP. The workaround is exporting `KMP_INIT_AT_FORK=TRUE`. Commit [89f5d51](https://github.com/verl-project/verl/commit/89f5d519a2d9577d44283becd973e652e47480aa) addresses this, but only in the ROCm CI workflow and Dockerfile.
+- [#8716](https://github.com/verl-project/verl/issues/8716) (open): Reports that FP8_BLOCK **rollout** weight sync with **SGLang** at TP=2 fails on **ROCm** (MI350X) with a scale shape mismatch ([16, 32] vs [16, 16]).
+- [#8717](https://github.com/verl-project/verl/issues/8717) (closed): Reports unexpected cancellations of the ROCm e2e CI workflow runs, both before and during execution, and asks maintainers to identify the cause.
 
-**Backend and hardware (reported)**
-- [#8640](https://github.com/verl-project/verl/issues/8640) (open): **ROCm/AMD**: The reporter says FP8_BLOCK **rollout** weight sync crashes with `No module named 'tilelang'` on the official ROCm image. The suspected cause is that #8498 introduced TileLang kernels while the ROCm image removes tilelang.
-- [#8609](https://github.com/verl-project/verl/issues/8609) (open): Separately configured (non-MTP) speculative draft-model weights may be discarded by vLLM sleep level 2 and are not restored by weight sync. The issue was filed by a bot from a review comment and relates to the sleep-level change in [482f86f](https://github.com/verl-project/verl/commit/482f86fd09959912c99c0acf2b90329f9e061da7) / #8608.
-- [#8586](https://github.com/verl-project/verl/issues/8586) (open): The reporter says the Ascend NPU quick-start scripts assume 8 or more devices (rollout TP=2, hardcoded `n_gpus_per_node=8` and `ASCEND_RT_VISIBLE_DEVICES`), so they can't run on single-card or small nodes.
-
-**Metrics, usability and requests**
-- [#8580](https://github.com/verl-project/verl/issues/8580) (open): The reporter says V1 `_compute_metrics` doesn't fetch `old_log_probs`/`sum_pi_squared`, so `variance_proxy/*` metrics are silently missing.
-- [#8579](https://github.com/verl-project/verl/issues/8579) (open): The reporter says `hf_processor` swallows processor load errors, including its own "Unsupported processor type" check. Multimodal runs then fail later without the original cause. The reporter proposes letting load errors propagate.
-- [#8649](https://github.com/verl-project/verl/issues/8649) (open): Feature request to compute the fused-kernel vocabulary projection only at response positions for PPO. The author reports a 9.83 s → 6.05 s step on Ascend NPU with identical loss.
-- [#8595](https://github.com/verl-project/verl/issues/8595) (open): RFC/tracking issue for verl-side changes for Qwen3.5 GRPO on TPU v7x: IS/RS sequence metrics, a replay-buffer poll interval, deferred host scalars, and a TransferQueue image pin.
-- [#8570](https://github.com/verl-project/verl/issues/8570) (open): Docs request to list `trackio` in the `RolloutTraceConfig.backend` docstring.
+**RFCs and feature requests**
+- [#8691](https://github.com/verl-project/verl/issues/8691) (open): RFC to restart faulty **rollout** replicas without interrupting the trainer. It covers detecting faults, isolating the replica, rebuilding it in place from a checkpoint or the next weight sync, and replaying in-flight requests. The proposed switch is `rollout.restart.enabled`. Demo results on NPU with Megatron and vLLM are included.
+- [#8696](https://github.com/verl-project/verl/issues/8696) (open): RFC for shared-backbone **PPO**, in which a small value head is trained on the frozen actor backbone. The reporter measures about 20% shorter steps on Qwen2.5-7B (Megatron), with similar eval results.
+- [#8697](https://github.com/verl-project/verl/issues/8697) (open): RFC to run the non-expert layers of the NVFP4 MoE recipe in MXFP8 instead of BF16, for both training and rollout.
+- [#8699](https://github.com/verl-project/verl/issues/8699) (open): RFC to add MXFP8 backward GEMMs, optionally with stochastic rounding, for routed experts in the NVFP4 MoE recipe.
+- [#8738](https://github.com/verl-project/verl/issues/8738) (open): RFC to share prompt preprocessing and TransferQueue storage across the `rollout.n` trajectories of a prompt (PR #8578). The reporter measures 40% less storage memory and 22% faster rollout on multimodal video **GRPO**.
 
 ## Stats
-- **Total Commits**: 27
-- **Analyzed Commits**: 27
-- **Active Contributors**: 12
-- **Files Changed**: 208 (sum of per-commit file counts)
-- **Training-Specific Commits**: 6 (22.2% of total)
-- **New Issues**: 16 (16 open, 0 closed at collection time)
+- **Total Commits**: 30
+- **Analyzed Commits**: 30
+- **Active Contributors**: 21
+- **Files Changed**: 323 (sum of per-commit file counts; 6,866 insertions, 21,704 deletions)
+- **Training-Specific Commits**: 12 (40% of total)
+- **New Issues**: 17 (15 open, 2 closed at collection time)
 
 ---
 *Generated by [Claude Code](https://claude.ai/code). Verify key conclusions against the linked commits and issues.*
