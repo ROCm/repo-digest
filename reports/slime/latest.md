@@ -1,12 +1,12 @@
-# slime Weekly Digest - 2026-11-19
+# slime Weekly Digest - 2026-11-26
 
 ## Summary
-No commits already merged into `main` have commit timestamps within the last 7 day(s). Three new issues were reported, all still open. Two describe reliability problems: in one, **R3** routing capture fails systematically when used with **PD disaggregation** on a MoE model. In the other, an **SGLang** engine that dies between the end of a **rollout** and **weight sync** stops a `--use-fault-tolerance` run. These are user-reported problems, not confirmed regressions.
+No commits landed on `main` in this window. Five new issues were filed. Four are user-reported bugs in training and rollout: removed samples (`remove_sample=True`) distort loss normalization and can abort REINFORCE++, `--num-epoch` trains fewer prompts than its help text describes, and HTTP 4xx responses are retried 60 times. The fifth is an RFC proposing to migrate slime's SGLang patches to upstream SGLang one capability at a time.
 
 Source: [THUDM/slime](https://github.com/THUDM/slime), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-11-12T23:03:57Z through 2026-11-19T23:03:57Z. Issue states reflect collection time.
+Window (UTC): 2026-11-19T23:05:02Z through 2026-11-26T23:05:02Z. Issue states reflect collection time.
 
 ## Key Changes
 
@@ -26,9 +26,19 @@ None
 
 ## Newly Submitted Issues
 
-- [#2546](https://github.com/THUDM/slime/issues/2546) (open): A user trained a Qwen3.5 MoE model (30B/35B-A3B, 32× A800) with **R3** (`--use-rollout-routing-replay`) and **PD disaggregation** (mooncake transfer backend). They report that routing capture fails systematically: 670 of 1415 token rows have no captured routing. This raises a `ValueError` because it is far above the 64-row tolerance. The reporter says the problem continued after they applied a proposed upstream **SGLang** patch and changed `slime/utils/types.py` locally. They report slime 0.4.0 and SGLang 0.5.15.post1. According to the report, R3 combined with PD disaggregation currently blocks MoE training.
-- [#2548](https://github.com/THUDM/slime/issues/2548) (open): A contributor from the boxd sandbox service asks whether the maintainers want a boxd **sandbox** provider for `examples/coding_agent_rl`. It would sit alongside the existing Sunabako and E2B providers and be selected with `SWE_SANDBOX_PROVIDER=boxd`. The contributor offers either a PR to the example or an out-of-tree provider loaded by import path (see #2447). This is a question about a feature, not a bug.
-- [#2551](https://github.com/THUDM/slime/issues/2551) (open): The reporter describes a **fault-tolerance** gap. With `--use-fault-tolerance`, engine health monitors are paused from the end of a **rollout** until `update_weights`. If an **SGLang** engine dies in that window (crash, OOM, node fault), it stays in the router and engine list. `recover_updatable_engines` does not replace it, so the `pause_generation` call during **weight sync** gets `ConnectionError` and the run exits. They also say that with fully-async rollout the periodic health check never runs when rollouts are shorter than `--rollout-health-check-first-wait` (600 s by default). They reproduced this on 16× H200 with slime 0.4.0. The reporter says their fix and unit test are in #2552, which is not merged in this window.
+**Training correctness: loss normalization and removed samples (user-reported, not yet confirmed by maintainers)**
+
+- [#2560](https://github.com/THUDM/slime/issues/2560) (open): Reports that rows fully masked by `remove_sample=True` are mishandled in two places. With `--calculate-per-token-loss`, `loss_function` in `slime/backends/megatron_utils/loss.py` adds one token per fully masked row to the denominator, which makes the per-token loss too small. With `--advantage-estimator reinforce_plus_plus`, an assertion in `get_reinforce_plus_plus_returns` (`slime/utils/ppo_utils.py`) stops the training step when a single sample has been removed. The reporter includes a CPU reproduction and a suggested fix.
+- [#2564](https://github.com/THUDM/slime/issues/2564) (open): This is the per-sample-loss version of #2560. Without `--calculate-per-token-loss`, removed samples still count in `step_global_batch_size`. The gradient of the kept samples is therefore scaled down by `kept / total`. In the reporter's example, removing 2 of 4 samples gives a loss of 0.5 instead of 1.0. The reporter says a fix needs a design decision: either count only samples that contribute to the loss, or document the current behavior.
+
+**Rollout data and configuration**
+
+- [#2565](https://github.com/THUDM/slime/issues/2565) (open): Reports that `--num-epoch` computes `num_rollout` as `(dataset_size // rollout_batch_size) * num_epoch`, but the help text says `num_epoch * dataset_size // rollout_batch_size`. Because the data cursor carries over between epochs, the run stops short and the last epoch is only partly trained. In the reporter's example, only 24 of 30 prompt visits are trained. If the dataset is smaller than `rollout_batch_size`, the startup assertion fails. The reporter suggests either fixing the formula or updating the help text.
+- [#2561](https://github.com/THUDM/slime/issues/2561) (open): Reports that `_post` in `slime/utils/http_utils.py` retries every error, including HTTP 4xx responses that cannot succeed on retry (for example, a prompt longer than the context length). Such requests are sent up to 60 times with 1 s sleeps, so the caller sees the error only after about 60 s and the SGLang engines take extra load during rollout. The suggested fix is to raise 4xx errors immediately, except 408 and 429.
+
+**SGLang integration (RFC)**
+
+- [#2556](https://github.com/THUDM/slime/issues/2556) (open): This RFC proposes replacing the five SGLang patches in slime's v0.5.21 Docker build (`sglang.patch`, `sglang-deterministic.patch`, `sglang-top_p.patch`, `sglang-release_hicache.patch`, `sglang-pull_weights.patch`) with upstream SGLang implementations, one capability at a time. A patch would only be removed after checking the SGLang version pin, caller compatibility, and a relevant RL regression run, covering areas such as weight sync, PD disaggregation, deterministic/**FP8** paths, top-p sampling masks, and HiCache release. The RFC asks maintainers to decide on the migration approach, which rollout configurations must pass before a patch is removed, and when to update the pin. No code changes are proposed in slime yet.
 
 ## Stats
 - **Total Commits**: 0
@@ -36,7 +46,7 @@ None
 - **Active Contributors**: 0
 - **Files Changed**: 0
 - **Training-Specific Commits**: 0 (0% of total)
-- **New Issues**: 3 (3 open, 0 closed at collection time)
+- **New Issues**: 5 (5 open, 0 closed at collection time)
 
 ---
 *Generated by [Claude Code](https://claude.ai/code). Verify key conclusions against the linked commits and issues.*
