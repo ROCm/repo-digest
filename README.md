@@ -30,8 +30,9 @@ The system generates prioritized digests highlighting changes relevant to your d
 ├── projects/
 │   └── <project>.md         # Project-specific configuration
 └── skills/
-    └── download-artifacts/  # Skill for downloading digest artifacts
-        └── SKILL.md
+    ├── download-artifacts/  # Skill for downloading digest artifacts
+    │   └── SKILL.md
+    └── digest-viewer/       # Claude Code plugin: /digest pane for reading digests
 scripts/
 └── download-artifacts.sh    # Download artifacts from GitHub Actions
 digests/                     # Generated digest files
@@ -167,6 +168,26 @@ Generated digests are uploaded as GitHub Actions artifacts. Use the included scr
 Run `./scripts/download-artifacts.sh -h` for full usage and available workflows.
 
 If using Claude Code, invoke `/download-artifacts` to download artifacts interactively.
+
+## Reading Digests in Claude Code
+
+The `digest-viewer` plugin (`.claude/skills/digest-viewer/`) loads automatically when Claude Code starts in this repository. It adds a `/digest` command that opens a digest in an interactive pane, without scrolling through the whole file in the chat:
+
+```text
+/digest                      # newest digest in downloads/
+/digest fetch xla            # download the latest run first (also: triton, jax, maxtext, llvm, verl, slime, miles, vime, ...)
+/digest downloads/run-<id>/digest-<date>.md   # a specific file
+/digest close                # close the pane
+```
+
+In the pane, focus it with `ctrl+x tab` or a click, then:
+
+- `a` / `h` / `m` / `l` filter All / High / Medium / Low priority entries; `r` toggles "ROCm only"
+- Enter or a click on an entry expands it to its full text and commit link; `x` expands or collapses all; `s` shows or hides the summary
+- `p` / `n` go to the older / newer run of the same workflow. Buttons say whether that run is already in `downloads/` or will be downloaded first (`⇣ … (download)`). On the newest run, `c` checks GitHub for a newer one.
+- `q` closes the pane
+
+Downloading needs the `gh` CLI with access to `ROCm/repo-digest`, as for the script above. If the plugin was added while a session was already running, run `/reload-plugins` there. Run its tests with `claude plugin test .claude/skills/digest-viewer`.
 
 ## Manual Trigger
 
