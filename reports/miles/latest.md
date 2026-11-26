@@ -1,238 +1,205 @@
-# miles Weekly Digest - 2026-11-19
+# miles Weekly Digest - 2026-11-26
 
 ## Summary
-This week shipped several deployment-breaking changes. The dashboard became a separate `miles-dashboard` package configured with `MILES_DASHBOARD*` env vars, and new **SGLang** rollout features (flat base64 sampling masks, PP-aware output-store replay reads) need matching SGLang and **router** builds. New training features include opt-in BF16 stochastic rounding, a `fused_lm_head` log-prob backend, MXFP4 QAT for DeepSeek-V4-Flash and TPU **torchtitan** training for Qwen3.5-family models. Users also reported, in new open issues that are not yet confirmed regressions, that colocated **PPO** saves an all-zero actor **checkpoint** and that `--save-hf` on Qwen3.5 writes an incomplete export.
+Several training-correctness fixes landed this week. Bridge-built **Megatron** models now get the full **FP8**/**FP4** precision recipe, GLM-5 DSA indexer parameters are frozen (old checkpoints need `--no-load-optim`), and resumed **LoRA** runs keep their weight version. New features include multi-node pipeline-parallel **SGLang** rollout engines, TPU true on-policy **torchtitan** training, routed-expert **LoRA** for Qwen3.5/3.6 **MoE**, a BPO loss example, and continuation of **agent** turns cut by `finish_reason=length` (on by default). Among the newly submitted issues, a user reported a GLM-5.3 KDA int32 overflow in the pinned `flash-linear-attention` 0.5.2 at 87,382+ tokens, and another user proposed an RFC for FSDP trie packing.
 
 Source: [radixark/miles](https://github.com/radixark/miles), branch: `main`.
 Coverage: commits already merged into `main`, with commit timestamps in the last 7 day(s). Open and unmerged PRs are excluded.
 Issues: newly submitted issues in the same window, including open and closed issues. Reported concerns and requests are not shipped changes.
-Window (UTC): 2026-11-12T23:11:02Z through 2026-11-19T23:11:02Z. Issue states reflect collection time.
+Window (UTC): 2026-11-19T23:11:08Z through 2026-11-26T23:11:08Z. Issue states reflect collection time.
 
 ## Key Changes
 
 ### 🔴 High Priority
 
-- Move the **dashboard** from `miles/dashboard` into a separately installed `packages/miles-dashboard` package (`miles_dashboard`) by *Tao Lin (RadixArk)* [5e4f7b8](https://github.com/radixark/miles/commit/5e4f7b85a9cd56091df252987d81c7c16b9724a7)
+- Pass the full low-precision recipe (FP8/FP4, BF16 layer overrides, TE precision config file) to bridge-built Megatron models by *HEJIAN SANG* [a2e81a3](https://github.com/radixark/miles/commit/a2e81a39f949eec06969e448ec020143896df6dc)
 
-    Breaking change: the import path is now `miles_dashboard.*` and the viewer is `python -m miles_dashboard.serve`. The dashboard is no longer in the `miles` wheel, so you need `pip install -e packages/miles-dashboard`. The Dockerfiles (CUDA, cu12, **ROCm**, Rubin, TPU) install it conditionally, so AMD images keep the dashboard. Custom environments, wheel installs and dump-viewing login nodes must add the install step.
+    Fixes a numerics correctness bug. Bridge-built models, including **LoRA** models built through the bridge, previously received only `fp8` and `fp8_recipe`. Other precision flags stayed at provider defaults and silently trained in BF16. A new `apply_precision_args` helper now applies `fp8_param_gather`/`fp4_param_gather`, the quantizer factories, the `first_last_layers_bf16` and `num_layers_at_*_in_bf16` overrides, and `quant_recipe` from `--te-precision-config-file`. **Megatron** runs that use **NVFP4**/**MXFP8**-style recipes through the bridge should expect different numerics and memory behavior than before.
 
-- Move the built-in dashboard onto the run observer interface and replace the `--use-miles-dashboard` CLI flags with `MILES_DASHBOARD*` environment variables by *Tao Lin (RadixArk)* [f5cdf15](https://github.com/radixark/miles/commit/f5cdf1574c33810a3013d486825e362cbe48129f)
+- Freeze Miles DSA indexer parameters in GLM-5 so DDP and weight decay skip them by *Alexander Zhipa* [b17bd2b](https://github.com/radixark/miles/commit/b17bd2b329a7c2b7559ab2c0add87419b2f28e6d)
 
-    Breaking configuration change: `--use-miles-dashboard`, `--miles-dashboard-workspace`, `--dashboard-gpu-sample-interval`, `--dashboard-sglang-scrape-mode` and `--dashboard-forward-prometheus` were removed, and runs that still pass them fail argument parsing. Set `MILES_DASHBOARD=1` plus `MILES_DASHBOARD_*` via `extra_env_vars` instead. With the dashboard on, startup fails unless `--dump-details` is set, and it also fails under `--cluster-backend kubernetes`. `report_sandbox` moved to `miles.rollout.agentic.sandbox_reporter`.
+    Fixes a training correctness problem with `--dsa-impl miles`. Weight decay was shrinking the gradient-free indexer weights every step, which drifted the top-k selection that the **SGLang** rollout engine serves. **Checkpoint** compatibility changes: resuming from a pre-change checkpoint with optimizer state fails on distributed-optimizer bucket sizes, so use `--no-load-optim`. Converted HF checkpoints, `release` checkpoints and **LoRA** runs are unaffected.
 
-- Request sampling masks and top-k candidates as flat base64 arrays in rollout, and reject nested rows by *Nan Jiang* [c38b9e8](https://github.com/radixark/miles/commit/c38b9e8dafcaead456bf27f31c8c9c215c1e52cc)
+- Resumed **LoRA** runs now continue the weight version saved in the adapter checkpoint by *Nan Jiang* [1cc3d62](https://github.com/radixark/miles/commit/1cc3d62ec7cee704c7c87c0cc2552a7460881b90)
 
-    A **performance** change to the **SGLang** **rollout** transport, and also deployment-breaking: Miles now rejects nested rows. You need an SGLang build with PR #50126 and a **router** that forwards the new fields (sgl-router-for-miles #32). The Miles router already forwards raw bodies, but the native SGLang router needs the update. The output-store path is unaffected.
+    Adapter-only **checkpoint** saves now record `weight_version`, and `restore_single_lora` restores it. Before this, resumed **Megatron** LoRA runs restarted the version counter, which could break policy consistency between **rollout** and training in long-running **async** jobs. Older adapter dirs and torchtitan dirs keep the version that `--load` restored.
 
-- Read only this pipeline stage's replay layers (routed experts, indexer top-k) from the output store under Megatron PP by *Jiajun Li (RadixArk)* [206e4eb](https://github.com/radixark/miles/commit/206e4ebc12ba0da141a6abe0ea8fa06e6087de20)
+- Make pipeline-parallel SGLang rollout engines work: add `--sglang-pp-layer-partition`, derive TP as GPUs/`pp_size`, and scale health timeouts per stage by *Asaf Gardin* [2e724d9](https://github.com/radixark/miles/commit/2e724d993aadc6afcb72cb16ff3b2ad239594ba4)
 
-    Cuts output-store (Mooncake) read volume for **R3** and indexer replay under pipeline parallelism. It requires SGLang with sgl-project/sglang#48123 and a router that forwards `return_outputs_via_store` and `replay_layer_splits`, and runs fail otherwise. The `register_replay_list_*` and `attach_replay_data` signatures changed (new `blocks` argument). Custom `--pipeline-model-parallel-layout` setups still over-read.
+    **SGLang** rollout engines can now span multiple nodes with one pipeline stage per node. **Breaking:** `--rollout-num-gpus-per-engine` now means TP × PP GPUs, so existing scripts that set `--sglang-pp-size` will get a different TP. Health-check budgets now scale with `pp_size` for launched and external engines (**rollout**, **router**, **Ray** cells), which avoids false unhealthy marks on cold start. Megatron pipeline layout, including the **LoRA** bridge, now goes through a shared `apply_pipeline_layout` helper.
 
-- Read output-store routing replay rows per micro batch instead of materializing whole columns by *Jiajun Li (RadixArk)* [d44f60c](https://github.com/radixark/miles/commit/d44f60c5a239e270d9370285d3e9fcc99891ce8a)
+- Add TPU true on-policy training for Qwen3 and dense Qwen3.5-family models on the torchtitan backend by *HEJIAN SANG* [70a07ef](https://github.com/radixark/miles/commit/70a07ef75efe7de4504a145b5d9df29135512ee5)
 
-    Lower memory and read cost for **Megatron** and torch-native MoE routing replay, including the **MultiLoRA** actor. `output_store_read` is replaced by an `OutputStore` client across actor and rollout-data APIs. Startup now fails if `radix_transfer_plugins` lacks `OutputStore.read_slot`, so older SGLang images must be rebuilt.
+    With `--true-on-policy-mode` on TPU, the **torchtitan** trainer uses sglang-torchtpu batch-invariant ops so trainer log-probs match the **SGLang** rollout bit for bit. That removes the train/rollout mismatch that **TIS**-style corrections otherwise handle. The mode has strict constraints: TP/CP/PP all 1, one GPU per engine, no **LoRA**, dense models only, plain temperature sampling, `entropy_coef` 0, and at most 128 packed sequences per microbatch. Startup validation rejects unsupported configurations.
 
-- Add opt-in BF16 stochastic rounding of FP32 master weights for Megatron training by *Ziang Li (University of Michigan)* [47d67e2](https://github.com/radixark/miles/commit/47d67e2d18f0f5a4ece66e2f989717dd76b3de75)
+- Add native shared-outer routed-expert **LoRA** for Qwen3.5/3.6 **MoE** in the **Megatron** raw mode by *Nan Jiang* [ceae9c5](https://github.com/radixark/miles/commit/ceae9c5f3f901e2f03af3ad23187f78b132aac19)
 
-    `OPEN_TRAINING_BF16_STOCHASTIC_ROUNDING_FLAG=1` turns on a Triton Philox kernel that addresses "weight sticking", where small RL updates are lost under round-to-nearest. It works for `--bf16` runs with the distributed optimizer, on GPU or with `--optimizer-cpu-offload`, and it stays deterministic across rematerialization and **checkpoint** resume. With the flag on, startup rejects `--use-precision-aware-optimizer` unless `--optimizer-cpu-offload` is also set.
+    Under `--megatron-to-hf-mode raw`, routed-expert adapters (`experts.gate_up_proj`/`down_proj`) can now be trained via `PackedGroupedExpertsSpec`. This requires `--experts-shared-outer-loras` and `--expert-tensor-parallel-size 1`. The new startup assertions require gate/up and down to be targeted together, because **SGLang** otherwise ignores the expert weights, and they may reject target sets that previously started.
 
-- Add `--log-probs-backend fused_lm_head` to compute log-probs and entropy without materializing full logits by *Omri Manor (AI21 Labs)* [cbea8cb](https://github.com/radixark/miles/commit/cbea8cb01eefc276aa646ad917335074304a26ce)
+- Add Bellman Policy Optimization (BPO) custom loss example and a `pg_loss_fn` hook in `policy_loss_function` by *wl45361* [0c55a4a](https://github.com/radixark/miles/commit/0c55a4af17a80376df0475bbf9534ef3aec77b3c)
 
-    Projects through the vocab-parallel output layer one tile at a time under activation checkpointing. This should cut peak memory for large-vocab **Megatron** RL. It applies to the actor only, needs a `GPTModel`-style forward (`HybridModel` fails early) and does not support combined 1f1b. Internally, `model` was renamed to `model_chunks` in `forward_only`/`run_forward_backward_pass`. Verify numerical parity before relying on it.
+    An experimental BPO plugin (`--loss-type custom_loss`, `--bpo-smoothing`, `--bpo-weight-cap`) runs on top of **GRPO**. It replaces PPO's clipped ratio with a stop-gradient complementary-probability weight. Core `policy_loss_function` gains an optional `pg_loss_fn` hook, and entropy, KL, OPSM and **TIS** still apply with it. OPSM masking now uses `torch.where`. On **Megatron**, `custom_loss` uses `fp32_output=True`, so full logits take about 2× the memory.
 
-- Add MXFP4 routed-expert rollout and optional MXFP4 QAT for DeepSeek-V4-Flash by *Bo Li* [5bb9786](https://github.com/radixark/miles/commit/5bb97866d417533d54ddd9efe34e77872d1b25ce)
+- Continue agentic session turns cut by `finish_reason=length` by closing open reasoning and tool-call blocks (new `--allow-truncated-continuation` flag) by *Jiajun Li (RadixArk)* [350ab20](https://github.com/radixark/miles/commit/350ab2015da3c48b1e7464726ff280f95c5fc1e9)
 
-    New `mxfp8-mxfp4-routed-expert` precision mode plus the `--routed-expert-qat mxfp4`, `--init-model-source hf` and `--rollout-weight-source trainer` flags. RL can start from the official HF checkpoint, and the trainer forward matches the W4A8 **SGLang** rollout. This feature is experimental and Blackwell-only. It needs Megatron-Bridge and fp32 master weights, and it does not support Megatron FSDP or CUDA graphs. `scripts/run_deepseek_v4.py` now sets `SGLANG_DSV4_FP4_EXPERTS=1` for MXFP4 rollout.
+    The v1 and v2 **SGLang** session servers now extend a length-truncated turn instead of ending the trajectory. They append closer tokens with loss mask 0, which changes **rollout** sample structure and **agent** trajectory length. The flag is **on by default** for families that declare a closer, so existing runs change behavior on upgrade. Use `--no-allow-truncated-continuation` to keep the old HTTP 409 behavior. The `tito_session_mismatch` check now compares the closed form.
 
-- Fix score-centering empty CP ranks to return fp32/fp64 log-prob dtype, matching non-empty ranks, by *Xiuyu Li (UC Berkeley)* [55766eb](https://github.com/radixark/miles/commit/55766eb710afe0dec5c48e71bc30931cbef01849)
+- Continue Muse Spark turns cut by `finish_reason=length` in the session server, and reject client-supplied server-only message keys by *Jiajun Li (RadixArk)* [0685f4b](https://github.com/radixark/miles/commit/0685f4b3b346000095699823aa11d8bbda010434)
 
-    Fixes a training hang. Under all-gather CP with bf16/fp16 logits, a dtype mismatch on empty ranks made the all-reduce fail on Gloo or hang on NCCL. This affects long-running training that uses score centering with context parallelism.
-
-- Enforce per-family continuation roles in the session server and split the TITO verifier into spec and normal rollouts by *Jiajun Li (RadixArk)* [af4d5fa](https://github.com/radixark/miles/commit/af4d5fa4c962e11681dc201b8c36c5a35e724186)
-
-    Behavior change for **agent** harnesses. The v1 and v2 session servers now return HTTP 400 when the role appended after an assistant turn isn't allowed for the model family. For example, DeepSeek-V4 accepts only `tool` after a tool call, and MiniMax/DeepSeek-V3.2 reject `tool` after a plain reply. New model families need a `test_continuation_roles.py` entry or CI fails.
-
-- Add TPU torchtitan training for Qwen3.5/3.6/3.8 with a new launcher, a gated-delta-rule kernel, and TPU CI by *HEJIAN SANG* [ef40c95](https://github.com/radixark/miles/commit/ef40c95ca9d5cdd22ddc75bca0ffa431a27eafaa)
-
-    Adds `scripts/tpu/run_qwen3_5_torchtitan.py` (Qwen3.5-4B/27B, Qwen3.6-35B-A3B, Qwen3.8-27B), a TPU `gated_delta_rule` kernel and nightly TPU CI. The SGLang TPU pin and jax/jaxlib versions changed, which affects anyone rebuilding the TPU image. `--multimodal-keys` is now rejected on platforms that cannot train encoders.
-
-- Enable Ulysses context parallelism around the TPU flash attention in the **torchtitan** backend by *HEJIAN SANG* [244a229](https://github.com/radixark/miles/commit/244a22978244d81d2bfa05cae22b94b843b2dec2)
-
-    Lifts the TPU `--context-parallel-size 1` restriction, enabling long-sequence RL on TPU. `--seq-length` must now be divisible by the CP size, and the head count by TP×CP. Expert parallelism remains unsupported on TPU. A test checks outputs and gradients are bitwise equal to single-rank attention.
+    `muse_spark` truncated turns are now extended with loss-masked closer tokens and stored under a server-only `truncated_turn` key. Previously these requests returned HTTP 409. **Behavior change for agent clients:** messages that carry server-only keys (`truncated_turn`, Inkling `content_blocks`, DeepSeek-V4 `content_leading_whitespace`) now get HTTP 400 and leave the session unchanged.
 
 ### 🟡 Medium Priority
 
-**Routing replay (R3) and output store**
+- Add **TITO** truncation closing for assistant turns cut by `finish_reason=length` across model families by *Jiajun Li (RadixArk)* [36c4ce8](https://github.com/radixark/miles/commit/36c4ce88a53c46d8e8863b0fb25359c8dfa97fcc)
 
-- Fill rollout/routing replay entries on a background worker thread, ahead of the forward passes, by *Jiajun Li (RadixArk)* [673708c](https://github.com/radixark/miles/commit/673708ca7bccbd5903ee44dc45287825db1eeedd)
+    Adds `close_truncated_turn`/`check_turn_structure` and per-family `TruncationGrammar` definitions for DeepSeek, GLM, Kimi, MiniMax, Qwen3.5 and Nemotron3. Open `<think>` and tool-call blocks are closed correctly, so multi-turn **agent** **rollout** sessions keep token-level consistency. This is the foundation for the high-priority continuation changes above.
 
-    Overlaps replay reads with compute for **Megatron** and **torchtitan**, a **performance** and host-memory gain. Fill errors surface at the first pop that needs them. Watch the new `replay_wait`/`replay_fill` timers.
+- Continue Inkling turns cut by `finish_reason=length` in the session server (TITO) by *Jiajun Li (RadixArk)* [ef9ff34](https://github.com/radixark/miles/commit/ef9ff34d1e5482f5b37ee3c96f643a5ea94810ef)
 
-- Replay now reads only each trainer rank's own CP rows from the **output store** by *Jiajun Li (RadixArk)* [8487f9f](https://github.com/radixark/miles/commit/8487f9f04a50ebcdd08fbcd0fadb8bdbe201a762)
+    Inkling now declares a truncation closer, so follow-up requests after a `max_tokens` cutoff no longer get HTTP 409. An unfinished tool call is stored with its recipient and partial JSON but is not treated as a call.
 
-    Cuts store read traffic by about `cp_size`. `--save-debug-train-data` dumps now hold per-rank local, padded rows, so compare dumps per CP rank.
+- Centralize reasoning/answer delimiters in new `miles/utils/reasoning.py`, shared by TITO tokenizers and rm_hub graders by *Jiajun Li (RadixArk)* [fe7037f](https://github.com/radixark/miles/commit/fe7037f561910f26ac4eccf9082bc5f4410488f8)
 
-- Refactor rollout (R3) replay to fill one micro batch at a time via the replay manager, renaming `fill` to `attach` by *Jiajun Li (RadixArk)* [2522c78](https://github.com/radixark/miles/commit/2522c785ccc8755a1fd8e5ebf84d38316f1d6344)
+    The **TITO** truncation grammars and the `deepscaler`, `gemma_math` and `gpqa` reward functions now share `REASONING_DELIMITERS`. `deepscaler`/`gpqa` grading now uses `extract_after_reasoning`. **Reward values may change** for multi-delimiter model families, so check reward consistency on affected runs.
 
-    `fill_replay_data` is now `attach_replay_data`, and out-of-tree callers of `routing_replay.fill`/`fill_replay_data` must migrate. Adds a `replay_fill` timer.
+- Split the monolithic TITO tokenizer into per-family modules (base, deepseek, glm, inkling, kimi, minimax, muse_spark, nemotron, qwen) by *Jiajun Li (RadixArk)* [fec59ea](https://github.com/radixark/miles/commit/fec59eaa329d690980d1ed3834603f948127b399)
 
-- Refactor Megatron **R3** routing replay to number replays by MoE layer, assigning each router's `stream_idx` once after model build by *Jiajun Li (RadixArk)* [5395993](https://github.com/radixark/miles/commit/5395993e9a10872c585b66712bbc37b971901cf7)
+    About 1,400 lines in `tito_tokenizer.py` became a `tito_tokenizer/` package, with no intended behavior change. Code that imports from the old module path should be checked against the new package exports. New families register a `TITOTokenizer` and `FIXED_TEMPLATE` in the package.
 
-    Raises `ValueError` if the registered router count doesn't match `moe_layer_freq`, and drops the `models` argument from `attach_replay_data`. Users with PP/VPP or mixed dense/MoE layouts should verify the layer mapping.
+- Fix math reward to extract `\fbox{}` answers, not just `\boxed{}` by *Catherine Lee* [a0a68c6](https://github.com/radixark/miles/commit/a0a68c6e9b53089c5709e5dbadf19ca5c4530fc9)
 
-- Refactor context-parallel slicing into a shared `CPLayout` used by token and MoE replay (R3) paths by *Jiajun Li (RadixArk)* [22bd973](https://github.com/radixark/miles/commit/22bd973356fbed8fca93c2259ea8dae1651f7946)
+    Correct `\fbox{}` answers previously got zero **rollout** reward in the math/deepscaler graders. **GRPO** reward curves may shift upward for affected runs.
 
-    Intended to preserve behavior for zigzag and allgather CP (bshd/thd), and it removes a memory copy. Long-context CP users should confirm their numerics are unchanged.
+- Fix DrGRPO example reducer to read miles' parallel state instead of Megatron's `mpu` by *Catherine Lee* [8668b1e](https://github.com/radixark/miles/commit/8668b1ec3c1ab0c22e284183867f7085d7af3872)
 
-**Checkpointing**
+    The Dr.**GRPO** reducer now works on the **Megatron**, **FSDP** and **torchtitan** backends; it still requires CP size 1. The `--custom-pg-loss-reducer-function-path` docs and help text now use dotted-path syntax.
 
-- Add checkpoint decay (`--keep-recent-checkpoints`, `--keep-checkpoint-every`) to prune old Megatron checkpoints by *andreas-inherent (Inherent Laboratories)* [061ee78](https://github.com/radixark/miles/commit/061ee783b4488e813ec2930c064c7442ee58a416)
+- Allow score centering with DFlash speculative decoding, requiring exact acceptance thresholds by *Nan Jiang* [54300c0](https://github.com/radixark/miles/commit/54300c0068cebd559a29f558d392fd5971d92876)
 
-    Opt-in, destructive **checkpoint** retention that limits disk growth in long runs. Sentinel saves are pinned with `.keep`. It is Megatron-only and not compatible with `--use-critic`, `--megatron-config` or multi-policy.
+    Score centering now permits **SGLang** `DFLASH` speculative **rollout** when both acceptance thresholds are 1.0. Configs that combine score centering with a non-DFLASH algorithm still fail validation.
 
-- Reject `--save-retain-interval` when **checkpoint** decay (`--keep-recent-checkpoints`) is enabled by *Jiajun Li (RadixArk)* [7767e15](https://github.com/radixark/miles/commit/7767e158bcb743b47a7db0b0674abebacc02e82a)
+- Stride pad-token routing replay fill across experts instead of piling onto the first experts by *Maxwill Lin* [96afce3](https://github.com/radixark/miles/commit/96afce3694bf70a8669a2c3cd9b4744e4d8112c5)
 
-    Configs that combine the two flags now fail at startup. Before this check, they could silently lose checkpoints.
+    In MoE routing replay (**R3**-style), `fill_replay_padding` now spreads padding rows across experts instead of always using experts 0..top_k-1. This avoids dispatch hotspots in torchtitan compile warmup and the DeepSeek V4.1 indexer. Non-padding rows are unchanged.
 
-**Rollout, agents and TITO**
+- Fix DSA indexer top-k for a lone query row by keeping the padded row stride (new `score_rows` helper) by *Nan Jiang* [0c424f1](https://github.com/radixark/miles/commit/0c424f105e01f836ebe97c72ff39505ab950392a)
 
-- Add `random` mode to `--async-data-buffer-selection` so fully-async rollout can take a random subset of buffered groups by *Nan Jiang* [326b2a1](https://github.com/radixark/miles/commit/326b2a1d615668eb087648ba72f878da60a9a571)
+    Fixes rejected top-k calls in DeepSeek-V4/V4.1 indexers when a context-parallel rank holds a single query row with an unaligned key count (**Megatron** training).
 
-    Changes which groups a step sees, which affects policy staleness in **async** rollout. The default `fifo` is unchanged, and `random` is seeded by `--rollout-seed`.
+- Fix glm5_next (GLM-5.3-Flash) **Megatron** raw HF export to use checkpoint tensor names by *Nan Jiang* [38574a2](https://github.com/radixark/miles/commit/38574a2b2e1e40521c09414152635b6879daed0f)
 
-- Add optional agent `preflight` hook that runs once at startup, before the engine wait, and fails the run early on a broken setup by *Tao Lin (RadixArk)* [40a81e7](https://github.com/radixark/miles/commit/40a81e7a515f9e4647335cd22c74cac639bda250)
+    Exported text-stack weights now use the `model.language_model.` prefix to match the **checkpoint** layout. This fixes weight loading in **SGLang**/HF.
 
-    Before this hook, a broken **agent** setup made rollout drop and refill samples without end. Harbor implements the hook, and it is optional for other agent functions.
+- Add native shared-outer routed-expert **LoRA** support for GLM-5.3-Flash in the **Megatron** backend by *Nan Jiang* [f205db8](https://github.com/radixark/miles/commit/f205db8cc70498084c49a4094201f7042945b82e)
 
-- Let in-process Harbor trials on AgentENV build task Dockerfiles that copy files, adding an `aenv` preflight and a shared `PROVIDER_ALIASES` registry by *Tao Lin (RadixArk)* [7ae844a](https://github.com/radixark/miles/commit/7ae844a4783c48155c8c0d5a8638ab22ab6bc1e7)
+    With `--experts-shared-outer-loras`, routed experts can take shared-outer adapters. The launcher still leaves routed experts out by default, so existing runs are unaffected.
 
-    `HARBOR_ENV_TYPE=agentenv` now supports `COPY`/`ADD` and multi-`FROM` Dockerfiles. Install `aenv` ≥ 0.2.3 on every worker.
+- Keep base weight bytes in merged **LoRA** export when merging leaves values unchanged (e.g. -0.0 stays -0.0) by *Nan Jiang* [41da3bf](https://github.com/radixark/miles/commit/41da3bfa902f014979d5ac313af3ce3ff47cc906)
 
-- Stop idle executor workers from keeping the agentic subprocess alive after an agent call by *Nan Jiang* [d4caa29](https://github.com/radixark/miles/commit/d4caa29e58f99b947e48a5838e329320e9c94162)
+    Merged **Megatron** LoRA exports are now bit-exact with the base model wherever the delta is zero. This helps checkpoint comparison and weight-sync consistency.
 
-    Prevents agent child processes from piling up in long-running agentic **rollout** jobs.
+- Move train-data object-store `put` off the rollout executor event loop via `asyncio.to_thread` by *Nan Jiang* [a0c90b9](https://github.com/radixark/miles/commit/a0c90b929dbf098e6544801305f1e994581c284d)
 
-- Render DeepSeek-V4 appended turns from the last assistant turn to cut **TITO** tokenization cost by *Jiajun Li (RadixArk)* [8a2aa0b](https://github.com/radixark/miles/commit/8a2aa0b3cbaec01922e18071ab4a66ab5b403b3d)
+    Slow object-store puts no longer block the fully-**async** **rollout** producer. This reduces stalls in long-running **Ray** RL jobs.
 
-    Tokenization cost now scales with the appended messages, not the whole conversation. This is a **performance** gain for long multi-turn sessions, with tokens meant to stay identical.
+- Run on **SGLang** builds without deprecated DP-attention flags; send the admin API key on admin routes by *HEJIAN SANG* [ec8bb5a](https://github.com/radixark/miles/commit/ec8bb5a31f70563fbec175f399debd64d6d8fcef)
 
-- Accept appended system messages in the **TITO** tokenizer for DeepSeek-V4.1 by *Jiajun Li (RadixArk)* [b55c2a5](https://github.com/radixark/miles/commit/b55c2a533f33ec126df145bf4760ce113dd9304b)
+    Miles now tolerates SGLang builds that dropped `--enable-dp-attention`. `SGLangApiClient` sends a separate `admin_api_key` on admin routes, falling back to `SGLANG_ADMIN_API_KEY` for external engines. The key is plumbed through **Ray** rollout cell specs. This affects deployments that use admin keys, external engines or newer SGLang builds.
 
-    Supports mid-conversation system prompts with `deepseekv41`. V4 still rejects them.
+- Pin newer sglang-torchtpu commit in the TPU image and require an admin key for weight updates by *HEJIAN SANG* [2beab27](https://github.com/radixark/miles/commit/2beab27e63dd3674036aea8a10ab9c67a48a8e36)
 
-**Observability**
+    The TPU **SGLang** engine now refuses weight updates without `SGLANG_ADMIN_API_KEY`. **torchtitan** TPU RL users must export the same key in both the engine and trainer shells.
 
-- Add a run-observer plugin interface that reports train tokens, rollout samples, engine topology and data buffer length by *Tao Lin (RadixArk)* [5a16ade](https://github.com/radixark/miles/commit/5a16adecfd42a79c5d86d6d45fdbf8d1d6d864d9)
+- Add SSE decoding for Dynamo generate streams inside the existing HTTP retry transport (`response_decoder` in `http_utils.post`) by *Zhongdongming Dai (NVIDIA)* [c6e33b6](https://github.com/radixark/miles/commit/c6e33b68df8effc8358d15383bb93862339bbedf)
 
-    External packages can watch runs without patching the trainer, and engine topology is re-reported after **fault tolerance** recovery. It is a no-op without observers, but per-token reporting adds CPU copy overhead when one is active.
+    Adds a robust SSE parser for Dynamo-backed generation. Decoder failures and other permanent errors now fail once with the original reason. Only 408/429/5xx and producer-marked errors are retried, which improves **router**/**rollout** reliability. Non-streaming paths are unchanged.
 
-**Model conversion and weight sync**
+- Skip vision processing for text-only prompts in `process_vision_info` by *Alexander Zhipa* [4dfc8b4](https://github.com/radixark/miles/commit/4dfc8b41902979a0666df4cfe24e8a10b2aa76ea)
 
-- Fix mbridge MTP layer mapping for DSA (DeepSeek-V3.2/GLM-MoE-DSA) models so it lands after the last decoder layer by *Nan Jiang* [95b555a](https://github.com/radixark/miles/commit/95b555a8e2b0c86e826845fe0688f8c63d5780bd)
+    Text-only checkpoints that ship an `AutoProcessor` config no longer need `qwen_vl_utils` or an image processor, which fixes **rollout** data-processing failures. Image and video prompts still raise `ImportError` if the dependency is missing.
 
-    Before this fix, MTP weights could be mis-mapped during HF↔Megatron conversion and weight sync. Only one MTP layer is supported.
+- Name the primary W&B run after `--wandb-exp-name` and handle a missing wandb group by *Alexander Zhipa* [c349799](https://github.com/radixark/miles/commit/c34979946baf1c7f94c53e3db76d06f684efd6f8)
 
-- torchtitan weight sync now sends grouped HF experts (Qwen3.5-MoE) as per-expert tensors by *HEJIAN SANG* [ee05e8b](https://github.com/radixark/miles/commit/ee05e8b92c741c53de3b523a753eb05f12517cf0)
+    Primary W&B runs now get predictable names, and runs without a `wandb_group` no longer fail with a `None + str` error. This improves **observability** for long-running RL jobs.
 
-    Keeps MoE weights consistent between the **torchtitan** trainer and **SGLang**. It assumes EP = 1 and asserts on unsupported layouts.
+- [AMD] Enable more MI350 nightly CI tests and add ROCm support for the fake INT4 quant kernel and image build by *Xinyu Jiang (CMU)* [271cbfc](https://github.com/radixark/miles/commit/271cbfca7a1989be01eec9a74fe0f5eb1fef0cf5)
 
-- Fix `convert_hf_to_fp8.py` so all-zero blocks keep finite, positive FP8 scales by *Nan Jiang* [764bdb2](https://github.com/radixark/miles/commit/764bdb287d3411af0702130cdde7cb12e07efe86)
+    `fake_int4_quant_cuda` now compiles under HIP and is installed in `Dockerfile.rocm`. New MI350 nightly tests cover FSDP **R3**, multi-**LoRA**, LoRA GDN, the quantizer and MiniMax M3. **ROCm impact:** AMD users get **INT4** fake-quant support and broader nightly regression coverage.
 
-    Prevents NaN/inf scales for zero or padded blocks, and fixes fp16 underflow in the channel and tensor strategies.
+- Pause scheduled ROCm CI runs on Spur by removing the cron triggers from `pr-test-rocm.yml` by *Xinyu Jiang (CMU)* [9011e81](https://github.com/radixark/miles/commit/9011e812d091a7bbc57d508898b93a081f2497d0)
 
-- Fix `convert_hf_to_nvfp4.py` so it quantizes DeepSeek-native checkpoints (adds bare `layers` prefix) by *Nan Jiang* [c32fa57](https://github.com/radixark/miles/commit/c32fa57f6759e6850b9004298e964a3991c63da7)
+    **ROCm impact:** long ROCm tests now run only on PRs labelled `nightly` and `run-ci-long`, or via `/rerun-test`. ROCm metric baselines accumulate more slowly. There is no runtime change.
 
-    Before this fix, **NVFP4** conversion skipped every layer in DeepSeek-native checkpoints.
+- Scope CI metric-history gate storage to the writing repository by *Yueming Yuan* [c1f7aa6](https://github.com/radixark/miles/commit/c1f7aa696a2b694d1ea20a097a064e8c81baa89a)
 
-**TPU / torchtitan**
+    Baselines are now scoped per repository, including on the ROCm CI path. The hosted `runs` table needs a `repository` column, provisioned out-of-band. CI only.
 
-- Add compiled `RowLogProb` op for TPU padded-row log-prob scoring that avoids saving the fp32 softmax by *HEJIAN SANG* [c05bd92](https://github.com/radixark/miles/commit/c05bd929035c04a50285593ac32a2e2652da59ec)
+- CI: strip the host docker socket from job containers on every self-hosted runner via a `docker` wrapper hook by *Yueming Yuan* [d8a5b24](https://github.com/radixark/miles/commit/d8a5b245c88a9767abe48cfab0fab94164c11b97)
 
-    Saves about 8 GB for 8192 rows × 248K vocab. It is used when `--entropy-coef` is 0 and TP is 1, and log-probs differ from the torch scorer by about 1e-6.
+    Closes a path to host root from CI jobs. Maintainers must reinstall the hook on existing runners, and jobs that relied on the docker socket will fail.
 
-- TPU torchtitan trainer pads every microbatch to `--seq-length`, replacing power-of-two length buckets by *HEJIAN SANG* [cb89016](https://github.com/radixark/miles/commit/cb89016704b9e24d6eba0b52ac0487ac80823ee9)
+- CI: name Docker image repository after `github.repository` instead of hardcoding `radixark/miles` by *Yueming Yuan* [ecf1987](https://github.com/radixark/miles/commit/ecf19870da3932f5af9278cea5559eb6303f6cb3)
 
-    Each pass compiles a single program, which shortens warmup but adds padded compute for small microbatches. The GPU path is unchanged.
-
-- Enable `--save-debug-train-data` for the torchtitan backend by moving the dump into the shared torch-native loop by *HEJIAN SANG* [e338921](https://github.com/radixark/miles/commit/e338921546f6f91356fc034ed15896d0ae8c72ce)
-
-    FSDP and **torchtitan** now share one dump path, and only one CP rank writes in torchtitan.
-
-- Patch torchtitan in the TPU docker image so CPU-offloaded weight init runs with DTensor's RNG tracker off, fixing an init hang, by *HEJIAN SANG* [02f9920](https://github.com/radixark/miles/commit/02f9920cfd032ca0c2383ce77e2f791df71d9b5a)
-
-    Backports pytorch/torchtitan#6161. Fixes a `trunc_normal_` hang seen with Qwen3.8-27B and the host optimizer. The patch applies only to the TPU image.
-
-- TPU: move the final norm out of torchtitan's vocab-sized FSDP unit in the TPU patch by *HEJIAN SANG* [80e2407](https://github.com/radixark/miles/commit/80e240773bd474088ee75b6392da6feb60119e38)
-
-    The commit message reports that Qwen3-4B cold compile time on TPU dropped from about 33 minutes to about 6.
-
-- Install torch_tpu with a `_chunk_cat.out` kernel in the TPU Docker image by *HEJIAN SANG* [99b7374](https://github.com/radixark/miles/commit/99b73743c73ecb8822368f17881b9ca8aeb7c336)
-
-    Avoids about 100 s of compile per vocab-sized unit on the first **FSDP2** backward on TPU. The image now depends on a new `miles-wheels` asset.
-
-**Build, release and ROCm CI**
-
-- Publish the miles wheel to the GitHub release on every release tag, with a sglang-miles wheel version resolver and CI smoke tests by *HEJIAN SANG* [6e4c4a1](https://github.com/radixark/miles/commit/6e4c4a185eab5aa8023810c06e5602b5502ca71b)
-
-    Release and installation packaging change. The resolver only scans the 100 newest wheel releases.
-
-- Align ROCm PR CI with CUDA: shared dependency-ref resolver, 2/4/8-GPU MI350 stages, per-file ROCm test planning by *Xinyu Jiang (CMU)* [99fee65](https://github.com/radixark/miles/commit/99fee653c8ba0c69535b340dc977c160b9e1f4f1)
-
-    **ROCm**/**AMD** MI350/MI355X PRs now get the same test coverage as CUDA. Contributors must move ROCm test registrations to the `stage-c-<N>-gpu-mi350` suites, and maintainers must provision the renamed `AMD_*` secrets.
-
-- Restore ROCm PR CI image builds and unify Docker image input hashing across CUDA, TPU and ROCm by *Jiajun Li (RadixArk)* [11fd95f](https://github.com/radixark/miles/commit/11fd95f74964d984824a2dff24c7cce8b2e18790)
-
-    `docker/image_inputs.py` is now the single source of truth for which images need rebuilding. ROCm PRs that change image inputs get their own `pr-<n>-rocm10-mi35x` image.
-
-- Bump Mooncake to 0.3.13 in the ROCm image and raise the e2e output-store segment size for fully-async runs by *Kevin Mi* [fa13e2e](https://github.com/radixark/miles/commit/fa13e2ec42622f6e77aabd8e0c295ab8b4347eac)
-
-    **ROCm** users on the Mooncake/output-store path should rebuild their images. Fully-**async** runs may need more than the 2 GiB default segment size.
-
-- Authenticate Dockerfile GitHub API release lookups via a BuildKit secret to avoid rate-limit 403s by *Zhichen Zeng (RadixArk)* [f60d744](https://github.com/radixark/miles/commit/f60d74465aa492aa2edf6fa38f9b09de32569d95)
-
-    More reliable image builds. HTTP errors now fail the build instead of being silently ignored.
-
-- Patch scanner-flagged packages in the Docker image and bump kubectl and helm by *Han Yu* [e55513f](https://github.com/radixark/miles/commit/e55513f6390c3d5d5045355398e255c467b9201f)
-
-    Should clear HIGH/CRITICAL Trivy/Xray findings for security-gated clusters. Findings in pinned SGLang and Ray files remain.
+    Forks no longer touch `radixark/miles` images, and `docker/build.py` gains `--image-repo`. The TPU and ROCm PR images stay pinned to `radixark/miles`. CI and image maintainers only.
 
 ### 🟢 Low Priority
 
-- CI image pipeline updates by *Jiajun Li (RadixArk)*: build the PR CI image whenever its inputs change [010a85c](https://github.com/radixark/miles/commit/010a85cd9c4470969335fae410c822cbc000bed7); per-architecture (amd64/arm64) PR image builds [15b3274](https://github.com/radixark/miles/commit/15b32740408a28e28fca42cc55910aec714606c6); a persistent `rebuild-ci-image` label [28dac25](https://github.com/radixark/miles/commit/28dac25ff4ab798ccae836e24cf86a15965d0c2e); earliest-run-only fork image publishing via pinned skopeo [4102f39](https://github.com/radixark/miles/commit/4102f3904b4a52865000f339414dcdda0ea903a5); ignoring cancelled runs in the supersession check [b054e3f](https://github.com/radixark/miles/commit/b054e3fd2a4a6142754a3e925d772d00ae2384e5); and replacing `gh` CLI calls with direct API requests [f3a198f](https://github.com/radixark/miles/commit/f3a198f5d490f9fd1971f14b231acfcf1e793f58)
+- Add a truncate rollout to the session verifier to test continuing turns cut by `finish_reason=length` by *Jiajun Li (RadixArk)* [db993aa](https://github.com/radixark/miles/commit/db993aaca3e53abfe90fdfe42b046496805085fa)
 
-    These are CI-only changes with no runtime impact. The PR image build is now more reliable for fork and self-hosted builders, and contributors who touch `docker/` get earlier build feedback.
+    Adds GPU verifier coverage for **TITO** truncated-turn continuation. `SPEC_UNFINISHED_RATIO_THRESHOLD` is renamed to `UNFINISHED_RATIO_THRESHOLD`.
 
-- Keep inline R3 and indexer replay e2e coverage at CP>1, PP>1 and GLM-5 indexer top-k by *Jiajun Li (RadixArk)* [db67977](https://github.com/radixark/miles/commit/db679771fdaf68bfdfe06bc599fda9b870c50131)
+- Clarify the `deepscaler` and `math` reward grading contracts in `rm_hub` comments by *Jiajun Li (RadixArk)* [4ad60af](https://github.com/radixark/miles/commit/4ad60afd3330b1a7219eac7705200f725c9c1267)
 
-    Test-only. Keeps CI coverage of both **R3** replay transports (inline and output store) at CP>1 and PP>1.
+    Comment-only change. It documents strict post-reasoning grading for `deepscaler` and verl-aligned `\boxed{}` extraction for `math`.
 
-- Fix CI so torchtitan LoRA checkpoint tests actually run, not just import, by *HEJIAN SANG* [a5207af](https://github.com/radixark/miles/commit/a5207af398f8bb32ea9aa6cf1967b9f011113d5a), plus updated test fakes [e81bc84](https://github.com/radixark/miles/commit/e81bc840ed646e1a60e2089d7f11c8243890b04f)
+- Refactor mbridge: share DeepSeek-layout MTP name mapping via new `DeepseekMtpBridgeMixin` by *Nan Jiang* [6f973c9](https://github.com/radixark/miles/commit/6f973c9e4c0608c3b06e06fbcf7710efb2b93f6f)
 
-    Test-only. Restores regression coverage for **torchtitan** **LoRA** checkpointing.
+    Deduplicates the MTP conversion for DeepSeek-V3.2 and GLM-4.7-Flash **Megatron** checkpoints. The mapping is intended to stay the same.
 
-- Document running the NeMo Gym recipe on E2B sandboxes, with updated setup steps by *Maksim Obukhov (Sudolabs)* [e91123b](https://github.com/radixark/miles/commit/e91123bd44f3de86cb65f279d4acf8a917f642fd)
+- Add Inkling 2 Mini recipe docs page (torchtitan backend, colocated **SGLang**, GRPO on 8× B200) by *Zhichen Zeng (RadixArk)* [44c464f](https://github.com/radixark/miles/commit/44c464f5fef2c953282a62db1a367f4d48df0533)
 
-    Docs and examples only. Adds E2B as a validated sandbox provider for the experimental NeMo Gym **agent** workflow.
+    Docs-only change. It covers the **torchtitan** FSDP2 setup, BF16 conversion, `--save-hf` **checkpoint** export and expected health metrics.
+
+- Speed up CPU CI via test fixes, skipping empty Stage B, and rebalancing suites by *Jiajun Li (RadixArk)* [9779b14](https://github.com/radixark/miles/commit/9779b148031a7aa69265ebbadb3c9da18b669ffb)
+
+    CI only. CPU CI should turn around faster, and the CI registration rules are updated.
+
+- Make the Lark CI notifier handle failed or truncated GitHub job reads by *Jiajun Li (RadixArk)* [0989f48](https://github.com/radixark/miles/commit/0989f4842fbd3b8a8b8f99a993daa9cbe8d48e32)
+
+    The notifier now retries GitHub reads and falls back to a run-level card, so nightly CI failures are less likely to go unreported.
+
+- Isolate CI GPU job containers from the host and other runners (drop `--privileged` and `--ipc=host`) by *Yueming Yuan* [47fcca1](https://github.com/radixark/miles/commit/47fcca1229bef53d4d4dd4f94a2305d93b3c75cb)
+
+    GPU CI jobs now get only `SYS_PTRACE`/`SYS_NICE`, InfiniBand devices and scoped data mounts. Multi-GPU tests that rely on **CUDA** IPC or NUMA binding may need these capabilities.
+
+- Fail GPU CI jobs whose container has the host docker socket mounted by *Yueming Yuan* [afb139f](https://github.com/radixark/miles/commit/afb139f25a2b2f9bca150d8da6b853eec9ad76c3)
+
+    Runners without the `job-container-docker` hook now fail GPU CI instead of running jobs with host-root access.
+
+- Add a CI job-start hook that deletes other repositories' checkouts from the runner work directory by *Yueming Yuan* [bb40e28](https://github.com/radixark/miles/commit/bb40e2875f16b987a7357b26e1b18f1f898834e2)
+
+    This affects only runner operators, including the B200 and aliyun runners.
+
+- Restrict wheel publishing, fork image builds, and ROCm/TPU PR tests to radixark/miles by *Yueming Yuan* [ce4985d](https://github.com/radixark/miles/commit/ce4985d944539a408354af5ba1de5e78445de21e)
+
+    Forks can no longer publish wheels or use the MI350/TPU runners. **ROCm impact:** forks can't run ROCm CI.
 
 ## Newly Submitted Issues
 
-- [#4863](https://github.com/radixark/miles/issues/4863) (open): User report that colocated **PPO** (`--colocate`, which enables `--offload-train`) silently saves an all-zero actor **checkpoint**, and the `--save-hf` export is zero too, while the save still reports success. The reporter reproduced it on v0.2.0 and v0.1.3 with the stock Qwen3-4B PPO example and says the code path is unchanged on `main`. Exported actor models from affected runs would be unusable. The reporter proposes restoring the actor from its host backup before saving.
-- [#4966](https://github.com/radixark/miles/issues/4966) (open): User report that `--save-hf` on Qwen3.5 writes only 320 of the checkpoint's 632 tensors, missing the vision tower and MTP layer. The directory still gets the full `config.json` and a `.complete` marker, so loading it in transformers, vLLM or the Hub would give random weights for the missing parts. The reporter asks for either a complete export or clear documentation and tooling.
-- [#4967](https://github.com/radixark/miles/issues/4967) (open): User report that `--fully-async --pause-generation-mode in_place` with a bare `--use-session-server` (v1) fails argument validation at startup. The cause is that the auto-enabled `--namespaced-radix-cache` requires session server v2. The shipped async agentic example uses exactly this combination. The workaround is `--no-namespaced-radix-cache`. The reporter also notes that `--get-mismatch-metrics` requires an undocumented `--custom-tis-function-path`.
-- [#4922](https://github.com/radixark/miles/issues/4922) (open): User report that on the **multi-LoRA** Tinker trainer, a CUDA OOM in a single request kills the whole trainer cell and loses every other adapter. With DP > 1, the client waits out a 120 s timeout. The reporter proposes catching OOM per request and coordinating it across DP ranks.
-- [#4924](https://github.com/radixark/miles/issues/4924) (open): Request to support Nemotron 3.5 Super VL checkpoints (`NemotronH_Omni_Reasoning_V3`) in bridge mode. These checkpoints are currently rejected by `AutoBridge`, and the reporter proposes a language-model-only bridge plugin. The reporter also notes an SGLang Mamba prefix-cache setting that otherwise gives wrong multi-turn logprobs.
-- [#4925](https://github.com/radixark/miles/issues/4925) (open): Maintainer tracking issue to re-enable the disabled Inkling **TITO** session-verifier GPU lane. The suspected cause is special-token mismatches on replies with several tool calls, which has not been reproduced yet. Until the lane is re-enabled, Inkling has no GPU session-verifier coverage.
-- [#4914](https://github.com/radixark/miles/issues/4914) (open): RFC to add Monarch as a `--cluster-backend monarch` option, including single-node runs and multi-node runs on SLURM. It would refactor the Ray-specific worker-manager layer into backend-neutral interfaces. Implementation is in draft PRs #4904–#4913, which are not merged.
-- [#4952](https://github.com/radixark/miles/issues/4952) (open): Feature plan for end-to-end 4-bit MoE training: NVFP4 forward, MXFP8 stochastic-rounding backward and quantized EP communication, starting with Inkling 2 Small. It is phased across miles, TransformerEngine and Megatron.
-- [#4959](https://github.com/radixark/miles/issues/4959) (open): RFC for an opt-in ModelExpress integration for Megatron→SGLang weight sync. It proposes object-storage XOR-delta sync for cross-region deployments and direct NIXL full-weight sync.
+- [#5054](https://github.com/radixark/miles/issues/5054) (open): **Bug report:** GLM-5.3-Flash KDA training with the pinned `flash-linear-attention` 0.5.2 hits int32 row-offset overflow in fla's short-convolution kernels at 87,382+ tokens in a single sequence (`T * D >= 2**31`, with D = 24576). The reporter says this causes silent out-of-bounds reads and writes, which they saw as `found NaN in local grad norm` on a 91k-token sequence. They included a reproduction script. They point to fla 0.6.0 (bumped in draft #4965) or a small patch on 0.5.2 as fixes. This is user-reported and not yet confirmed by maintainers. It could affect long-context training of models with wide short-conv layers.
+- [#5037](https://github.com/radixark/miles/issues/5037) (open): **RFC:** opt-in `--trie-packing` for the **FSDP** backend, which would train each shared token prefix once (prefix tries, similar to SGLang's radix cache). The author reports 1.4×–3.0× step speedups and lower peak memory on tau2-bench agentic RL workloads, with bit-identical step-0 log-probs. A stack of 8 draft PRs (#5021–#5028) is proposed. This is not merged.
+- [#5060](https://github.com/radixark/miles/issues/5060) (open): **Feature request:** `--dynamic-global-batch-steps N`, which would allow several optimizer steps per rollout together with `--use-dynamic-global-batch-size`. Today that option pins training to one step per rollout. The motivation is agentic rollouts with variable sample counts. The author asks how this should interact with `--num-steps-per-rollout` and with #4714 (weight versioning).
+- [#5018](https://github.com/radixark/miles/issues/5018) (open): **Question:** whether miles could use Megatron's native `RouterReplay` API instead of its Megatron fork patch for **R3** routing replay, and which configs or custom routers would still need the fork patch.
+- [#4991](https://github.com/radixark/miles/issues/4991) (open): **Feature request:** multimodal (image-text) **GRPO** support for DeepSeek-V4.1-Flash-1017. The current documented recipe drops vision tensors during checkpoint preparation, so training is text-only. The user asks about the roadmap and about reusing the Inkling multimodal RL infrastructure.
+- [#4969](https://github.com/radixark/miles/issues/4969) (open): An outreach request from Hugging Face asking maintainers to check the paper results and metadata listed on Papers with Code. It has no code or user impact.
 
 ## Stats
-- **Total Commits**: 52
-- **Analyzed Commits**: 52
-- **Active Contributors**: 14
-- **Files Changed**: 568
-- **Training-Specific Commits**: 20 (38.5% of total)
-- **New Issues**: 9 (9 open, 0 closed at collection time)
+- **Total Commits**: 42
+- **Analyzed Commits**: 42
+- **Active Contributors**: 12
+- **Files Changed**: 378
+- **Training-Specific Commits**: 11 (26.2% of total)
+- **New Issues**: 6 (6 open, 0 closed at collection time)
 
 ---
 *Generated by [Claude Code](https://claude.ai/code). Verify key conclusions against the linked commits and issues.*
