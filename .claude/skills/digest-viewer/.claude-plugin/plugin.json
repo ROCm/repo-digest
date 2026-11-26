@@ -1,0 +1,6 @@
+{
+  "name": "digest-viewer",
+  "version": "0.1.0",
+  "description": "Browse repo-digest digests in an interactive pane: /digest [fetch <workflow> | <file.md>]",
+  "types": "./types/index.d.ts"
+}
