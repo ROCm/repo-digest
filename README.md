@@ -32,7 +32,9 @@ The system generates prioritized digests highlighting changes relevant to your d
 └── skills/
     ├── download-artifacts/  # Skill for downloading digest artifacts
     │   └── SKILL.md
-    └── digest-viewer/       # Claude Code plugin: /digest pane for reading digests
+    └── digest-viewer -> ../../plugins/digest-viewer   # symlink, so Claude Code auto-loads it
+plugins/
+└── digest-viewer/           # Claude Code plugin: /digest pane for reading digests
 scripts/
 └── download-artifacts.sh    # Download artifacts from GitHub Actions
 digests/                     # Generated digest files
@@ -171,7 +173,7 @@ If using Claude Code, invoke `/download-artifacts` to download artifacts interac
 
 ## Reading Digests in Claude Code
 
-The `digest-viewer` plugin (`.claude/skills/digest-viewer/`) loads automatically when Claude Code starts in this repository. It adds a `/digest` command that opens a digest in an interactive pane, without scrolling through the whole file in the chat:
+The `digest-viewer` plugin (`plugins/digest-viewer/`, linked from `.claude/skills/digest-viewer`) loads automatically when Claude Code starts in this repository. It adds a `/digest` command that opens a digest in an interactive pane, without scrolling through the whole file in the chat:
 
 ```text
 /digest                      # newest digest in downloads/
@@ -187,7 +189,7 @@ In the pane, focus it with `ctrl+x tab` or a click, then:
 - `p` / `n` go to the older / newer run of the same workflow. Buttons say whether that run is already in `downloads/` or will be downloaded first (`⇣ … (download)`). On the newest run, `c` checks GitHub for a newer one.
 - `q` closes the pane
 
-Downloading needs the `gh` CLI with access to `ROCm/repo-digest`, as for the script above. If the plugin was added while a session was already running, run `/reload-plugins` there. Run its tests with `claude plugin test .claude/skills/digest-viewer`.
+Downloading needs the `gh` CLI with access to `ROCm/repo-digest`, as for the script above. If the plugin was added while a session was already running, run `/reload-plugins` there. Run its tests with `claude plugin test plugins/digest-viewer`. The source lives outside `.claude/` because CodeQL skips dot-directories, and the PR security scan fails when it finds TypeScript it cannot read.
 
 ## Manual Trigger
 
